@@ -1,0 +1,38 @@
+{
+    "name": "Port List",
+    "description": "Comprehensive port scanning and analysis tool. Lists all listening ports and established connections with process information. Can highlight suspicious ports (4444, 31337, etc.) commonly used by malware.",
+    "category": "network",
+    "requires_sudo": true,
+    "args": [
+        {
+            "name": "-l",
+            "description": "Show only listening ports (default)",
+            "required": false
+        },
+        {
+            "name": "-e",
+            "description": "Show only established connections",
+            "required": false
+        },
+        {
+            "name": "-a",
+            "description": "Show both listening and established connections",
+            "required": false
+        },
+        {
+            "name": "-p",
+            "description": "Show detailed process information",
+            "required": false
+        },
+        {
+            "name": "-s",
+            "description": "Highlight suspicious ports (4444, 31337, 6667, etc.)",
+            "required": false
+        },
+        {
+            "name": "-j",
+            "description": "Output in JSON format",
+            "required": false
+        }
+    ]
+}

@@ -62,6 +62,7 @@ pub mod sleeptime;
 #[cfg(feature = "storage")]
 pub mod storage;
 pub mod tools;
+pub mod security_tools;
 pub mod tracing_ext;
 pub mod turns;
 pub mod types;
@@ -92,6 +93,7 @@ pub use react::{ReActConfig, ReActTrace, ReasoningFormat};
 pub use tools::{Tool, ToolContext, ToolOutput};
 #[cfg(feature = "mcp-tools")]
 pub use tools::McpSubprocessTool;
+pub use security_tools::{SecurityToolRegistry, SecurityTool, SecurityCategory, ListSecurityTools, RunSecurityTool};
 pub use turns::{Session, Turn, TurnManager};
 pub use types::{AgentId, SessionId, SpanId, TraceId, TurnId};
 pub use vllm::{VllmClient, VllmConfig};
