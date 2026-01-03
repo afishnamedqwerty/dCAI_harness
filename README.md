@@ -14,34 +14,22 @@ dCAI/SPAI is a comprehensive multi-agent orchestration framework built in Rust, 
 - ** High Performance**: Built on Rust's safety and performance guarantees with tokio async runtime
 - ** Extensible Tools**: Native functions, MCP tools, Bash scripts, and HTTP APIs
 
-## Implementation Summary
+## Architecture
 
-### Core Framework (ATHPTTGH)
+### SPAI Pattern Components
 
-The framework implements all eight core components of the ATHPTTGH architecture:
+1. **Agents (A)**: Autonomous LLM-powered entities with specific personas and capabilities
+2. **Tools (T)**: Capability extensions via MCP, native functions, Bash scripts, and HTTP APIs
+3. **Handoffs (H)**: Inter-agent delegation protocols for task distribution
+4. **Patterns (P)**: Workflow orchestration strategies (Sequential, Concurrent, Hierarchical, etc.)
+5. **Turns (T)**: Conversation state management and history tracking
+6. **Tracing (T)**: Comprehensive observability infrastructure
+7. **Guardrails (G)**: Safety validation layers for inputs and outputs
+8. **Human-in-the-Loop (H)**: Approval workflows and intervention points
 
-| Component | Description | Status |
-|-----------|-------------|--------|
-| **Agents** | Autonomous LLM-powered entities with ReAct loops | ✅ Complete |
-| **Tools** | Extensible capability system (MCP, native, Bash, HTTP) | ✅ Complete |
-| **Handoffs** | Inter-agent delegation protocols | ✅ Complete |
-| **Patterns** | Workflow orchestration (Sequential, Concurrent, Router, etc.) | ✅ Complete |
-| **Turns** | Session/conversation state management | ✅ Complete |
-| **Tracing** | OpenTelemetry-compatible observability | ✅ Complete |
-| **Guardrails** | Input/output safety validation with tripwires | ✅ Complete |
-| **Human-in-the-Loop** | Approval workflows and intervention points | ✅ Complete |
+### Perpetual Agent System
 
-**Key Design Decisions:**
-- **Rust over Python** — Memory safety, zero-cost abstractions, fearless concurrency
-- **rustls-tls** — No C dependencies, easier cross-platform builds
-- **ReAct as First-Class** — Thought→Action→Observation is foundational, not bolted-on
-- **Trait-Based Extensibility** — Custom tools, guardrails, patterns, and storage backends
-
----
-
-### Advanced Features (Perpetual Agent System)
-
-Production-grade perpetual agent capabilities matching **Letta** and **MemGPT**:
+Production-grade perpetual agent capabilities:
 
 #### Stateful Agent Memory (`src/memory.rs`)
 - **Memory Blocks** — Self-editing chunks with labels, size limits, and metadata
@@ -114,26 +102,9 @@ Production-grade perpetual agent capabilities matching **Letta** and **MemGPT**:
             └─────────────────────────┘
                           │
             ┌─────────────────────────┐
-            │  Storage Backend        │ ← SQLite / PostgreSQL
+            │  Storage Backend        │ ← PostgreSQL
             └─────────────────────────┘
 ```
-
-**Framework Comparison:**
-
-| Feature | SPAI | Letta | MemGPT | LangChain |
-|---------|------|-------|--------|-----------|
-| Memory Hierarchy | ✅ | ✅ | ✅ | ❌ |
-| Agentic Context Control | ✅ | ✅ | ✅ | ❌ |
-| Sleep-Time Agents | ✅ | ✅ | ❌ | ❌ |
-| Resumable Streaming | ✅ | ❌ | ❌ | ❌ |
-| Language | Rust | Python | Python | Python |
-| Performance | **High** | Medium | Medium | Medium |
-
----
-
-## Quick Start
-
-Want to run a comprehensive security scan in 3 minutes? See [QUICKSTART.md](QUICKSTART.md)
 
 ### Prerequisites
 
@@ -190,50 +161,9 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-## Architecture
-
-### SPAI Pattern Components
-
-1. **Agents (A)**: Autonomous LLM-powered entities with specific personas and capabilities
-2. **Tools (T)**: Capability extensions via MCP, native functions, Bash scripts, and HTTP APIs
-3. **Handoffs (H)**: Inter-agent delegation protocols for task distribution
-4. **Patterns (P)**: Workflow orchestration strategies (Sequential, Concurrent, Hierarchical, etc.)
-5. **Turns (T)**: Conversation state management and history tracking
-6. **Tracing (T)**: Comprehensive observability infrastructure
-7. **Guardrails (G)**: Safety validation layers for inputs and outputs
-8. **Human-in-the-Loop (H)**: Approval workflows and intervention points
-
-### ReAct Loop Implementation
-
-Each agent implements the ReAct (Reasoning and Acting) paradigm:
-
-```
-┌──────────────────────────────────────┐
-│         ReAct Loop Iteration         │
-├──────────────────────────────────────┤
-│                                      │
-│  1. THOUGHT                          │
-│     ↓ Generate reasoning about       │
-│     ↓ current state                  │
-│                                      │
-│  2. ACTION                           │
-│     ↓ Decide next action:            │
-│     ↓ - Tool call                    │
-│     ↓ - Handoff                      │
-│     ↓ - Final answer                 │
-│                                      │
-│  3. OBSERVATION                      │
-│     ↓ Capture results/feedback       │
-│     ↓                                │
-│                                      │
-│  Repeat until Final Answer           │
-│  or Max Loops reached                │
-└──────────────────────────────────────┘
-```
-
 ## Examples
 
-### 🔐 Comprehensive Security Agent (Featured)
+### Comprehensive Security Agent (Featured)
 
 The flagship example demonstrating all framework capabilities with three integrated security tools:
 
@@ -246,9 +176,6 @@ export OPENROUTER_API_KEY=your-key
 # Run comprehensive security scan
 cargo run --example basic_agent_chkrootkit --features mcp-tools
 ```
-
-See [SECURITY_AGENT_SETUP.md](SECURITY_AGENT_SETUP.md) for full documentation.
-
 **What it does:**
 - Runs chkrootkit, rkhunter, portlist, tshark (60s default capture) and lynis security scans
 - Uses designated OpenRouter model (or local vllm hosted with --local where a model can be hosted in your org's private net connected to SPAI harness on each device for routine heartbeat reporting of system configs, IAM/RBAC and firewall rules, and general security assessments at scale)
