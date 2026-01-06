@@ -1,0 +1,160 @@
+#!/bin/bash
+# Screenshot OCR - Capture screen/image and extract text
+# SPAI Web Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Screenshot OCR - Capture screen and extract text
+
+Usage: screenshot_ocr [OPTIONS] [IMAGE_FILE]
+
+OPTIONS:
+    -s, --screenshot    Capture screenshot first
+    -w, --window        Capture specific window
+    -a, --area          Select area to capture
+    -l, --lang LANG     OCR language [default: eng]
+    -o, --output FILE   Save extracted text
+    --json              JSON output
+    -h, --help          Show this help
+
+REQUIRES:
+    tesseract-ocr, scrot/gnome-screenshot/maim (for capture)
+
+EXAMPLES:
+    screenshot_ocr image.png
+    screenshot_ocr --screenshot
+    screenshot_ocr --area -l eng+deu
+EOF
+}
+
+SCREENSHOT=0
+WINDOW=0
+AREA=0
+LANG="eng"
+OUTPUT=""
+JSON_OUT=0
+IMAGE=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -s|--screenshot) SCREENSHOT=1; shift ;;
+        -w|--window) WINDOW=1; SCREENSHOT=1; shift ;;
+        -a|--area) AREA=1; SCREENSHOT=1; shift ;;
+        -l|--lang) LANG="$2"; shift 2 ;;
+        -o|--output) OUTPUT="$2"; shift 2 ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) IMAGE="$1"; shift ;;
+    esac
+done
+
+# Check for tesseract
+if ! command -v tesseract &>/dev/null; then
+    echo "Error: tesseract-ocr not installed"
+    echo "Install with: sudo apt install tesseract-ocr"
+    exit 1
+fi
+
+TEMP_IMAGE="${IMAGE:-/tmp/screenshot_ocr_$$.png}"
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Screenshot OCR"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Capture screenshot if needed
+if [ $SCREENSHOT -eq 1 ]; then
+    echo "Capturing screenshot..."
+    
+    if command -v maim &>/dev/null; then
+        if [ $AREA -eq 1 ]; then
+            maim -s "$TEMP_IMAGE"
+        elif [ $WINDOW -eq 1 ]; then
+            maim -i $(xdotool getactivewindow) "$TEMP_IMAGE"
+        else
+            maim "$TEMP_IMAGE"
+        fi
+    elif command -v scrot &>/dev/null; then
+        if [ $AREA -eq 1 ]; then
+            scrot -s "$TEMP_IMAGE"
+        elif [ $WINDOW -eq 1 ]; then
+            scrot -u "$TEMP_IMAGE"
+        else
+            scrot "$TEMP_IMAGE"
+        fi
+    elif command -v gnome-screenshot &>/dev/null; then
+        if [ $AREA -eq 1 ]; then
+            gnome-screenshot -a -f "$TEMP_IMAGE"
+        elif [ $WINDOW -eq 1 ]; then
+            gnome-screenshot -w -f "$TEMP_IMAGE"
+        else
+            gnome-screenshot -f "$TEMP_IMAGE"
+        fi
+    elif command -v import &>/dev/null; then
+        # ImageMagick
+        if [ $AREA -eq 1 ]; then
+            import "$TEMP_IMAGE"
+        else
+            import -window root "$TEMP_IMAGE"
+        fi
+    else
+        echo "Error: No screenshot tool found (maim, scrot, gnome-screenshot, import)"
+        exit 1
+    fi
+    
+    if [ ! -f "$TEMP_IMAGE" ]; then
+        echo "Screenshot capture failed or cancelled"
+        exit 1
+    fi
+    
+    echo "Screenshot saved to: $TEMP_IMAGE"
+else
+    if [ -z "$IMAGE" ] || [ ! -f "$IMAGE" ]; then
+        echo "Error: No image file specified"
+        usage
+        exit 1
+    fi
+fi
+
+# Run OCR
+echo ""
+echo "Running OCR (language: $LANG)..."
+echo ""
+
+OCR_OUTPUT=$(tesseract "$TEMP_IMAGE" stdout -l "$LANG" 2>/dev/null)
+
+if [ $JSON_OUT -eq 1 ]; then
+    # Escape for JSON
+    ESCAPED=$(echo "$OCR_OUTPUT" | jq -Rs .)
+    cat <<EOF
+{
+    "image": "$TEMP_IMAGE",
+    "language": "$LANG",
+    "text": $ESCAPED,
+    "char_count": ${#OCR_OUTPUT}
+}
+EOF
+else
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "   Extracted Text"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+    echo "$OCR_OUTPUT"
+fi
+
+# Save if requested
+if [ -n "$OUTPUT" ]; then
+    echo "$OCR_OUTPUT" > "$OUTPUT"
+    echo ""
+    echo "Saved to: $OUTPUT"
+fi
+
+# Cleanup temp file
+if [ $SCREENSHOT -eq 1 ] && [ -z "$IMAGE" ]; then
+    rm -f "$TEMP_IMAGE"
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

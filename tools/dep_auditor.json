@@ -1,0 +1,27 @@
+{
+    "name": "Dependency Auditor",
+    "description": "Security audit for dependencies using cargo-audit (Rust), pip-audit (Python), npm audit (JavaScript), and govulncheck (Go).",
+    "category": "general",
+    "tags": [
+        "dev_tools",
+        "security_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-l",
+            "description": "Force language",
+            "required": false
+        },
+        {
+            "name": "-f",
+            "description": "Auto-fix vulnerabilities",
+            "required": false
+        },
+        {
+            "name": "-u",
+            "description": "Update dependencies",
+            "required": false
+        }
+    ]
+}

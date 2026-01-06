@@ -1,0 +1,173 @@
+#!/bin/bash
+# Firewall Auditor - Analyze iptables/nftables rules
+# SPAI Security Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Firewall Auditor - Analyze firewall rules
+
+Usage: firewall_auditor [OPTIONS]
+
+OPTIONS:
+    -i, --iptables    Analyze iptables rules
+    -n, --nftables    Analyze nftables rules
+    -u, --ufw         Analyze UFW status
+    -a, --all         Analyze all available firewalls
+    --open-ports      Show open ports not covered by rules
+    --json            JSON output
+    -h, --help        Show this help
+
+EXAMPLES:
+    firewall_auditor --all
+    firewall_auditor --iptables --open-ports
+EOF
+}
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Firewall Auditor"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+analyze_iptables() {
+    echo "=== iptables Analysis ==="
+    echo ""
+    
+    if ! command -v iptables &>/dev/null; then
+        echo "iptables not found"
+        return
+    fi
+    
+    echo "--- INPUT Chain ---"
+    sudo iptables -L INPUT -n -v 2>/dev/null || echo "  Cannot read rules (need sudo)"
+    echo ""
+    
+    echo "--- OUTPUT Chain ---"
+    sudo iptables -L OUTPUT -n -v 2>/dev/null | head -20 || echo "  Cannot read rules"
+    echo ""
+    
+    echo "--- FORWARD Chain ---"
+    sudo iptables -L FORWARD -n -v 2>/dev/null || echo "  Cannot read rules"
+    echo ""
+    
+    echo "--- NAT Table ---"
+    sudo iptables -t nat -L -n -v 2>/dev/null | head -20 || echo "  No NAT rules"
+    echo ""
+    
+    # Security analysis
+    echo "--- Security Analysis ---"
+    
+    # Check for default policies
+    DEFAULT_INPUT=$(sudo iptables -L INPUT 2>/dev/null | head -1 | grep -oP 'policy \K\w+' || echo "unknown")
+    DEFAULT_OUTPUT=$(sudo iptables -L OUTPUT 2>/dev/null | head -1 | grep -oP 'policy \K\w+' || echo "unknown")
+    
+    echo "  Default INPUT policy: $DEFAULT_INPUT"
+    echo "  Default OUTPUT policy: $DEFAULT_OUTPUT"
+    
+    if [ "$DEFAULT_INPUT" = "ACCEPT" ]; then
+        echo "  ⚠️  WARNING: INPUT default is ACCEPT - consider changing to DROP"
+    fi
+    
+    # Count rules
+    RULE_COUNT=$(sudo iptables -L -n 2>/dev/null | grep -c "^[A-Z]" || echo 0)
+    echo "  Total rules: $RULE_COUNT"
+}
+
+analyze_nftables() {
+    echo "=== nftables Analysis ==="
+    echo ""
+    
+    if ! command -v nft &>/dev/null; then
+        echo "nftables not found"
+        return
+    fi
+    
+    echo "--- Rulesets ---"
+    sudo nft list ruleset 2>/dev/null | head -50 || echo "  Cannot read rules (need sudo)"
+}
+
+analyze_ufw() {
+    echo "=== UFW Analysis ==="
+    echo ""
+    
+    if ! command -v ufw &>/dev/null; then
+        echo "UFW not found"
+        return
+    fi
+    
+    echo "--- Status ---"
+    sudo ufw status verbose 2>/dev/null || echo "  Cannot read status"
+    echo ""
+    
+    echo "--- Numbered Rules ---"
+    sudo ufw status numbered 2>/dev/null || echo "  Cannot read rules"
+}
+
+check_open_ports() {
+    echo ""
+    echo "=== Open Ports vs Firewall Coverage ==="
+    echo ""
+    
+    echo "--- Listening Ports ---"
+    ss -tulnp 2>/dev/null | grep LISTEN | head -20
+    echo ""
+    
+    echo "--- Ports Without Explicit Rules ---"
+    echo "(Ports that might need firewall rules)"
+    
+    # Get listening ports
+    LISTENING=$(ss -tulnp 2>/dev/null | grep LISTEN | awk '{print $5}' | grep -oP ':\K[0-9]+' | sort -u)
+    
+    for port in $LISTENING; do
+        # Check if port is covered by iptables
+        if ! sudo iptables -L -n 2>/dev/null | grep -q "dpt:$port"; then
+            echo "  Port $port - no explicit iptables rule"
+        fi
+    done
+}
+
+# Parse arguments
+ANALYZE_IPTABLES=0
+ANALYZE_NFTABLES=0
+ANALYZE_UFW=0
+ANALYZE_ALL=0
+CHECK_PORTS=0
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -i|--iptables) ANALYZE_IPTABLES=1; shift ;;
+        -n|--nftables) ANALYZE_NFTABLES=1; shift ;;
+        -u|--ufw) ANALYZE_UFW=1; shift ;;
+        -a|--all) ANALYZE_ALL=1; shift ;;
+        --open-ports) CHECK_PORTS=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) shift ;;
+    esac
+done
+
+# Default to all if nothing specified
+if [ $ANALYZE_IPTABLES -eq 0 ] && [ $ANALYZE_NFTABLES -eq 0 ] && [ $ANALYZE_UFW -eq 0 ]; then
+    ANALYZE_ALL=1
+fi
+
+if [ $ANALYZE_ALL -eq 1 ] || [ $ANALYZE_IPTABLES -eq 1 ]; then
+    analyze_iptables
+    echo ""
+fi
+
+if [ $ANALYZE_ALL -eq 1 ] || [ $ANALYZE_NFTABLES -eq 1 ]; then
+    analyze_nftables
+    echo ""
+fi
+
+if [ $ANALYZE_ALL -eq 1 ] || [ $ANALYZE_UFW -eq 1 ]; then
+    analyze_ufw
+    echo ""
+fi
+
+if [ $CHECK_PORTS -eq 1 ]; then
+    check_open_ports
+fi
+
+echo "═══════════════════════════════════════════════════════════════"

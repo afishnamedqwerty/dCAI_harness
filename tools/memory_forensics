@@ -1,0 +1,149 @@
+#!/bin/bash
+# Memory Forensics - Analyze /proc for suspicious activity
+# SPAI Security Tool
+
+set -euo pipefail
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Memory Forensics"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Hidden processes (not in ps but in /proc)
+check_hidden_processes() {
+    echo "=== Hidden Process Detection ==="
+    echo ""
+    
+    # Get PIDs from ps
+    PS_PIDS=$(ps -eo pid --no-headers | tr -d ' ' | sort -n)
+    
+    # Get PIDs from /proc
+    PROC_PIDS=$(ls -1 /proc | grep '^[0-9]*$' | sort -n)
+    
+    echo "PIDs in /proc but not in ps output:"
+    for pid in $PROC_PIDS; do
+        if ! echo "$PS_PIDS" | grep -q "^${pid}$"; then
+            if [ -d "/proc/$pid" ]; then
+                cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' || echo "(unknown)")
+                echo "  ⚠️  PID $pid: $cmdline"
+            fi
+        fi
+    done | head -10 || echo "  None found (good)"
+}
+
+# Deleted executables still running
+check_deleted_binaries() {
+    echo ""
+    echo "=== Processes Running Deleted Binaries ==="
+    echo ""
+    
+    for pid in /proc/[0-9]*; do
+        exe_link=$(readlink "$pid/exe" 2>/dev/null || true)
+        if [[ "$exe_link" == *"(deleted)"* ]]; then
+            pid_num=$(basename "$pid")
+            cmdline=$(cat "$pid/cmdline" 2>/dev/null | tr '\0' ' ' || echo "(unknown)")
+            echo "  ⚠️  PID $pid_num: $exe_link"
+            echo "      Command: $cmdline"
+        fi
+    done | head -20 || echo "  None found (good)"
+}
+
+# Suspicious memory mappings
+check_memory_mappings() {
+    echo ""
+    echo "=== Suspicious Memory Mappings ==="
+    echo ""
+    
+    echo "Processes with executable anonymous memory (potential shellcode):"
+    for pid in /proc/[0-9]*; do
+        if [ -r "$pid/maps" ]; then
+            # Look for rwx anonymous mappings
+            if grep -q "rwxp.*\[heap\]\|rwxp.*\[stack\]" "$pid/maps" 2>/dev/null; then
+                pid_num=$(basename "$pid")
+                name=$(cat "$pid/comm" 2>/dev/null || echo "unknown")
+                echo "  ⚠️  PID $pid_num ($name) - has rwx heap/stack"
+            fi
+        fi
+    done | head -10 || echo "  None found"
+}
+
+# Processes with injected libraries
+check_preload_injection() {
+    echo ""
+    echo "=== LD_PRELOAD Injection Check ==="
+    echo ""
+    
+    for pid in /proc/[0-9]*; do
+        if [ -r "$pid/environ" ]; then
+            preload=$(cat "$pid/environ" 2>/dev/null | tr '\0' '\n' | grep "^LD_PRELOAD" || true)
+            if [ -n "$preload" ]; then
+                pid_num=$(basename "$pid")
+                name=$(cat "$pid/comm" 2>/dev/null || echo "unknown")
+                echo "  ⚠️  PID $pid_num ($name): $preload"
+            fi
+        fi
+    done | head -10 || echo "  None found (good)"
+}
+
+# Kernel module check
+check_kernel_modules() {
+    echo ""
+    echo "=== Kernel Module Analysis ==="
+    echo ""
+    
+    echo "Recently loaded modules (by load order):"
+    lsmod | head -20
+    
+    echo ""
+    echo "Unsigned/tainted modules:"
+    for mod in $(lsmod | awk 'NR>1 {print $1}'); do
+        info=$(modinfo "$mod" 2>/dev/null | grep -i "sig\|taint" || true)
+        if [ -z "$info" ]; then
+            echo "  ⚠️  $mod - no signature info"
+        fi
+    done | head -10
+}
+
+# Memory usage anomalies
+check_memory_anomalies() {
+    echo ""
+    echo "=== Memory Usage Anomalies ==="
+    echo ""
+    
+    echo "Processes with unusually high memory:"
+    ps aux --sort=-%mem | awk 'NR>1 && $4>10 {print "  " $4 "% " $11}' | head -10
+    
+    echo ""
+    echo "System memory overview:"
+    free -h
+}
+
+# Network sockets in memory
+check_network_sockets() {
+    echo ""
+    echo "=== Network Sockets per Process ==="
+    echo ""
+    
+    for pid in /proc/[0-9]*; do
+        pid_num=$(basename "$pid")
+        if [ -d "$pid/fd" ]; then
+            socket_count=$(ls -la "$pid/fd" 2>/dev/null | grep -c socket || echo 0)
+            if [ "$socket_count" -gt 10 ]; then
+                name=$(cat "$pid/comm" 2>/dev/null || echo "unknown")
+                echo "  PID $pid_num ($name): $socket_count sockets"
+            fi
+        fi
+    done | sort -t: -k2 -rn | head -10
+}
+
+# Run all checks
+check_hidden_processes
+check_deleted_binaries
+check_memory_mappings
+check_preload_injection
+check_kernel_modules
+check_memory_anomalies
+check_network_sockets
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

@@ -1,0 +1,178 @@
+#!/bin/bash
+# CVE Scanner - Check installed packages against CVE databases
+# SPAI Security Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+CVE Scanner - Check packages for known vulnerabilities
+
+Usage: cve_scanner [OPTIONS] [PACKAGE...]
+
+OPTIONS:
+    -a, --all         Scan all installed packages
+    -s, --system      Detect package manager and scan system
+    -u, --update      Update CVE database first
+    --json            JSON output
+    -h, --help        Show this help
+
+EXAMPLES:
+    cve_scanner --system
+    cve_scanner openssl curl
+    cve_scanner -a --json
+EOF
+}
+
+JSON_OUT=0
+UPDATE=0
+SCAN_ALL=0
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -a|--all) SCAN_ALL=1; shift ;;
+        -s|--system) SCAN_ALL=1; shift ;;
+        -u|--update) UPDATE=1; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) PACKAGES+=("$1"); shift ;;
+    esac
+done
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI CVE Scanner"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Detect package manager
+detect_pm() {
+    if command -v dpkg &>/dev/null; then
+        echo "dpkg"
+    elif command -v rpm &>/dev/null; then
+        echo "rpm"
+    elif command -v pacman &>/dev/null; then
+        echo "pacman"
+    elif command -v apk &>/dev/null; then
+        echo "apk"
+    else
+        echo "unknown"
+    fi
+}
+
+PM=$(detect_pm)
+echo "Package manager: $PM"
+echo ""
+
+# Get installed packages with versions
+get_packages() {
+    case "$PM" in
+        dpkg)
+            dpkg-query -W -f='${Package} ${Version}\n' 2>/dev/null
+            ;;
+        rpm)
+            rpm -qa --queryformat '%{NAME} %{VERSION}-%{RELEASE}\n' 2>/dev/null
+            ;;
+        pacman)
+            pacman -Q 2>/dev/null
+            ;;
+        apk)
+            apk list --installed 2>/dev/null | awk '{print $1}'
+            ;;
+        *)
+            echo "Unknown package manager"
+            ;;
+    esac
+}
+
+# Check for security tools
+check_security_tools() {
+    echo "=== Security Update Tools ==="
+    
+    if command -v apt &>/dev/null; then
+        echo ""
+        echo "--- APT Security Updates Available ---"
+        apt list --upgradable 2>/dev/null | grep -i security || echo "  None pending"
+    fi
+    
+    if command -v unattended-upgrades &>/dev/null; then
+        echo ""
+        echo "--- Unattended Upgrades Status ---"
+        systemctl is-active unattended-upgrades 2>/dev/null || echo "  Not running"
+    fi
+}
+
+# Use available CVE scanning tools
+scan_cves() {
+    echo "=== CVE Vulnerability Scan ==="
+    echo ""
+    
+    # Try different scanners
+    if command -v grype &>/dev/null; then
+        echo "Using Grype scanner..."
+        grype dir:/ --only-fixed 2>/dev/null | head -50 || echo "Grype scan failed"
+        
+    elif command -v trivy &>/dev/null; then
+        echo "Using Trivy scanner..."
+        trivy fs / --security-checks vuln 2>/dev/null | head -50 || echo "Trivy scan failed"
+        
+    elif command -v vulners &>/dev/null; then
+        echo "Using Vulners scanner..."
+        vulners 2>/dev/null | head -50 || echo "Vulners scan failed"
+        
+    else
+        echo "No dedicated CVE scanner found (grype, trivy, vulners)"
+        echo "Falling back to package manager security checks..."
+        echo ""
+        
+        case "$PM" in
+            dpkg)
+                echo "--- Debian Security Tracker ---"
+                if command -v debsecan &>/dev/null; then
+                    debsecan 2>/dev/null | head -30 || echo "  debsecan not available"
+                else
+                    echo "  Install debsecan for detailed CVE info: apt install debsecan"
+                fi
+                ;;
+            rpm)
+                echo "--- RPM Security Updates ---"
+                yum updateinfo list security 2>/dev/null | head -30 || \
+                    dnf updateinfo list security 2>/dev/null | head -30 || \
+                    echo "  No security updates info available"
+                ;;
+            pacman)
+                echo "--- Arch Security ---"
+                if command -v arch-audit &>/dev/null; then
+                    arch-audit 2>/dev/null | head -30
+                else
+                    echo "  Install arch-audit for CVE info"
+                fi
+                ;;
+        esac
+    fi
+}
+
+# Summary of commonly vulnerable packages
+check_common_vulns() {
+    echo ""
+    echo "=== Common Vulnerable Package Check ==="
+    
+    CRITICAL_PKGS=("openssl" "openssh" "bash" "sudo" "curl" "wget" "git" "kernel")
+    
+    for pkg in "${CRITICAL_PKGS[@]}"; do
+        version=$(get_packages | grep -i "^$pkg " | head -1 | awk '{print $2}')
+        if [ -n "$version" ]; then
+            echo "  $pkg: $version"
+        fi
+    done
+}
+
+# Main execution
+check_security_tools
+echo ""
+scan_cves
+check_common_vulns
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "   Scan complete. Install 'grype' or 'trivy' for detailed CVE matching."
+echo "═══════════════════════════════════════════════════════════════"

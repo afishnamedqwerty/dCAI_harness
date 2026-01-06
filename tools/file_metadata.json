@@ -1,0 +1,26 @@
+{
+    "name": "File Metadata",
+    "description": "Get comprehensive file information including MIME type, size, permissions, timestamps, hashes, and extended attributes.",
+    "category": "filesystem",
+    "tags": [
+        "filesystem_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-r",
+            "description": "Recursive for directories",
+            "required": false
+        },
+        {
+            "name": "-h",
+            "description": "Include file hashes",
+            "required": false
+        },
+        {
+            "name": "-e",
+            "description": "Show extended attributes",
+            "required": false
+        }
+    ]
+}

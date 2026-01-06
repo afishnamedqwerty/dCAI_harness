@@ -1,0 +1,37 @@
+{
+    "name": "API Client",
+    "description": "Make REST and GraphQL API requests with support for authentication, custom headers, and JSON handling.",
+    "category": "general",
+    "tags": [
+        "web_tools",
+        "dev_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-X",
+            "description": "HTTP method (GET, POST, etc.)",
+            "required": false
+        },
+        {
+            "name": "-d",
+            "description": "Request body data",
+            "required": false
+        },
+        {
+            "name": "-H",
+            "description": "Custom header",
+            "required": false
+        },
+        {
+            "name": "-t",
+            "description": "Bearer token",
+            "required": false
+        },
+        {
+            "name": "-g",
+            "description": "GraphQL query",
+            "required": false
+        }
+    ]
+}

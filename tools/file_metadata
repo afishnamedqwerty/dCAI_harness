@@ -1,0 +1,142 @@
+#!/bin/bash
+# File Metadata - Get comprehensive file information
+# SPAI Filesystem Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+File Metadata - Get comprehensive file information
+
+Usage: file_metadata [OPTIONS] <file_or_dir>
+
+OPTIONS:
+    -r, --recursive     Recursive for directories
+    -h, --hash          Include file hashes
+    -e, --extended      Show extended attributes
+    --json              JSON output
+    --help              Show this help
+
+EXAMPLES:
+    file_metadata document.pdf
+    file_metadata -r -h /etc/
+    file_metadata -e config.yaml
+EOF
+}
+
+RECURSIVE=0
+HASH=0
+EXTENDED=0
+JSON_OUT=0
+TARGET=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -r|--recursive) RECURSIVE=1; shift ;;
+        -h|--hash) HASH=1; shift ;;
+        -e|--extended) EXTENDED=1; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        --help) usage; exit 0 ;;
+        *) TARGET="$1"; shift ;;
+    esac
+done
+
+if [ -z "$TARGET" ]; then
+    echo "Error: No file or directory specified"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI File Metadata"
+echo "   Target: $TARGET"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+get_file_info() {
+    local file="$1"
+    
+    if [ ! -e "$file" ]; then
+        echo "File not found: $file"
+        return
+    fi
+    
+    echo "--- $file ---"
+    
+    # Basic info
+    echo "Type: $(file -b "$file" 2>/dev/null | head -c 100)"
+    
+    # MIME type
+    MIME=$(file -b --mime-type "$file" 2>/dev/null)
+    echo "MIME: $MIME"
+    
+    # Size
+    SIZE=$(stat -c %s "$file" 2>/dev/null || stat -f %z "$file" 2>/dev/null)
+    if [ -n "$SIZE" ]; then
+        if [ "$SIZE" -gt 1073741824 ]; then
+            SIZE_HR="$(echo "scale=2; $SIZE/1073741824" | bc)G"
+        elif [ "$SIZE" -gt 1048576 ]; then
+            SIZE_HR="$(echo "scale=2; $SIZE/1048576" | bc)M"
+        elif [ "$SIZE" -gt 1024 ]; then
+            SIZE_HR="$(echo "scale=2; $SIZE/1024" | bc)K"
+        else
+            SIZE_HR="${SIZE}B"
+        fi
+        echo "Size: $SIZE_HR ($SIZE bytes)"
+    fi
+    
+    # Permissions
+    echo "Permissions: $(stat -c '%A (%a)' "$file" 2>/dev/null || stat -f '%Sp (%OLp)' "$file" 2>/dev/null)"
+    
+    # Owner
+    echo "Owner: $(stat -c '%U:%G' "$file" 2>/dev/null || stat -f '%Su:%Sg' "$file" 2>/dev/null)"
+    
+    # Timestamps
+    echo "Modified: $(stat -c '%y' "$file" 2>/dev/null | cut -d. -f1 || stat -f '%Sm' "$file" 2>/dev/null)"
+    echo "Changed: $(stat -c '%z' "$file" 2>/dev/null | cut -d. -f1 || stat -f '%Sc' "$file" 2>/dev/null)"
+    echo "Accessed: $(stat -c '%x' "$file" 2>/dev/null | cut -d. -f1 || stat -f '%Sa' "$file" 2>/dev/null)"
+    
+    # Hashes
+    if [ $HASH -eq 1 ] && [ -f "$file" ]; then
+        echo "MD5: $(md5sum "$file" 2>/dev/null | awk '{print $1}' || md5 -q "$file" 2>/dev/null)"
+        echo "SHA256: $(sha256sum "$file" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$file" 2>/dev/null | awk '{print $1}')"
+    fi
+    
+    # Extended attributes
+    if [ $EXTENDED -eq 1 ]; then
+        echo ""
+        echo "Extended Attributes:"
+        if command -v getfattr &>/dev/null; then
+            getfattr -d "$file" 2>/dev/null || echo "  (none)"
+        elif command -v xattr &>/dev/null; then
+            xattr -l "$file" 2>/dev/null || echo "  (none)"
+        else
+            echo "  (getfattr/xattr not available)"
+        fi
+    fi
+    
+    # Symlink target
+    if [ -L "$file" ]; then
+        echo "Symlink target: $(readlink -f "$file")"
+    fi
+    
+    echo ""
+}
+
+if [ -d "$TARGET" ] && [ $RECURSIVE -eq 1 ]; then
+    find "$TARGET" -type f 2>/dev/null | head -50 | while read -r file; do
+        get_file_info "$file"
+    done
+elif [ -d "$TARGET" ]; then
+    echo "Directory contents:"
+    ls -la "$TARGET" 2>/dev/null
+    echo ""
+    echo "Summary:"
+    echo "  Files: $(find "$TARGET" -maxdepth 1 -type f 2>/dev/null | wc -l)"
+    echo "  Dirs: $(find "$TARGET" -maxdepth 1 -type d 2>/dev/null | wc -l)"
+    echo "  Total size: $(du -sh "$TARGET" 2>/dev/null | cut -f1)"
+else
+    get_file_info "$TARGET"
+fi
+
+echo "═══════════════════════════════════════════════════════════════"

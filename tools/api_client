@@ -1,0 +1,146 @@
+#!/bin/bash
+# API Client - Make REST API requests
+# SPAI Web Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+API Client - Make REST/GraphQL API requests
+
+Usage: api_client [OPTIONS] <url>
+
+OPTIONS:
+    -X, --method METHOD   HTTP method [default: GET]
+    -d, --data DATA       Request body
+    -H, --header HEADER   Add header (can repeat)
+    -t, --token TOKEN     Bearer token
+    -j, --json            Expect JSON response
+    -g, --graphql QUERY   GraphQL query
+    -v, --variables VARS  GraphQL variables (JSON)
+    -o, --output FILE     Save response to file
+    --timeout SEC         Request timeout [default: 30]
+    -h, --help            Show this help
+
+EXAMPLES:
+    api_client https://api.github.com/users/octocat
+    api_client -X POST -d '{"key":"value"}' https://api.example.com
+    api_client -g 'query { viewer { login } }' https://api.github.com/graphql
+EOF
+}
+
+METHOD="GET"
+DATA=""
+HEADERS=()
+TOKEN=""
+JSON=0
+GRAPHQL=""
+VARIABLES=""
+OUTPUT=""
+TIMEOUT=30
+URL=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -X|--method) METHOD="$2"; shift 2 ;;
+        -d|--data) DATA="$2"; shift 2 ;;
+        -H|--header) HEADERS+=("-H" "$2"); shift 2 ;;
+        -t|--token) TOKEN="$2"; shift 2 ;;
+        -j|--json) JSON=1; shift ;;
+        -g|--graphql) GRAPHQL="$2"; shift 2 ;;
+        -v|--variables) VARIABLES="$2"; shift 2 ;;
+        -o|--output) OUTPUT="$2"; shift 2 ;;
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) URL="$1"; shift ;;
+    esac
+done
+
+if [ -z "$URL" ]; then
+    echo "Error: No URL specified"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI API Client"
+echo "   $METHOD $URL"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Build curl command
+CURL_ARGS=(
+    -sS
+    -X "$METHOD"
+    --max-time "$TIMEOUT"
+    -w "\n---STATUS:%{http_code}---TIME:%{time_total}s---"
+)
+
+# Add JSON headers if needed
+if [ $JSON -eq 1 ] || [ -n "$GRAPHQL" ]; then
+    CURL_ARGS+=(-H "Content-Type: application/json")
+    CURL_ARGS+=(-H "Accept: application/json")
+fi
+
+# Add bearer token
+if [ -n "$TOKEN" ]; then
+    CURL_ARGS+=(-H "Authorization: Bearer $TOKEN")
+fi
+
+# Add custom headers
+CURL_ARGS+=("${HEADERS[@]}")
+
+# Handle GraphQL
+if [ -n "$GRAPHQL" ]; then
+    if [ -n "$VARIABLES" ]; then
+        DATA=$(jq -n --arg q "$GRAPHQL" --argjson v "$VARIABLES" \
+            '{query: $q, variables: $v}')
+    else
+        DATA=$(jq -n --arg q "$GRAPHQL" '{query: $q}')
+    fi
+fi
+
+# Add data
+if [ -n "$DATA" ]; then
+    CURL_ARGS+=(-d "$DATA")
+fi
+
+# Make request
+RESPONSE=$(curl "${CURL_ARGS[@]}" "$URL" 2>&1)
+
+# Parse response
+STATUS=$(echo "$RESPONSE" | grep -oP '---STATUS:\K[0-9]+' || echo "000")
+TIME=$(echo "$RESPONSE" | grep -oP '---TIME:\K[0-9.]+s' || echo "?s")
+BODY=$(echo "$RESPONSE" | sed 's/---STATUS:[0-9]*---TIME:[0-9.]*s---$//')
+
+echo "Status: $STATUS"
+echo "Time: $TIME"
+echo ""
+
+# Pretty print JSON if possible
+if [ $JSON -eq 1 ] || [ -n "$GRAPHQL" ]; then
+    if command -v jq &>/dev/null; then
+        echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+    else
+        echo "$BODY"
+    fi
+else
+    echo "$BODY"
+fi
+
+# Save to file if requested
+if [ -n "$OUTPUT" ]; then
+    echo "$BODY" > "$OUTPUT"
+    echo ""
+    echo "Saved to: $OUTPUT"
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+
+# Exit with appropriate code
+if [[ "$STATUS" =~ ^2 ]]; then
+    exit 0
+else
+    exit 1
+fi

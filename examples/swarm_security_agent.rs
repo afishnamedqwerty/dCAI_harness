@@ -14,8 +14,7 @@
 use spai::prelude::*;
 use spai::react::Observation;
 use spai::handoffs::HandoffContext;
-use spai::security_tools::{SecurityToolRegistry, ListSecurityTools, RunSecurityTool};
-use spai::tools::Tool;
+use spai::security_tools::{SecurityToolRegistry, TaggedSecurityTools};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::fs;
@@ -53,15 +52,23 @@ async fn main() -> anyhow::Result<()> {
     let registry = Arc::new(SecurityToolRegistry::discover(&tools_dir));
     
     println!("✓ Discovered {} security tools from {:?}", registry.len(), tools_dir);
+    println!("  Available tags: {:?}", registry.all_tags());
     for tool in registry.tools() {
-        println!("  • {} ({}) - {}", tool.name, tool.id, tool.category);
+        let tags = if tool.tags.is_empty() { 
+            String::from("(no tags)") 
+        } else { 
+            tool.tags.join(", ") 
+        };
+        println!("  • {} ({}) - {} [{}]", tool.name, tool.id, tool.category, tags);
     }
     println!();
 
-    // Create tools for agents to use
-    let list_tools = Arc::new(ListSecurityTools::new(registry.clone())) as Arc<dyn Tool>;
-    let run_tool = Arc::new(RunSecurityTool::new(registry.clone())) as Arc<dyn Tool>;
-    let security_tools: Vec<Arc<dyn Tool>> = vec![list_tools.clone(), run_tool.clone()];
+    // Create tools for agents using tag-based filtering
+    // Agents with "security_tools" tag get access to security-related tools
+    let tagged_tools = TaggedSecurityTools::new(registry.clone(), &["security_tools"]);
+    let security_tools = tagged_tools.create_tools();
+    
+    println!("✓ Loaded {} tools with tag 'security_tools'", tagged_tools.filtered_tools().len());
 
     // Create OpenRouter client
     let client: Arc<dyn LlmClient> = match OpenRouterClient::from_env() {

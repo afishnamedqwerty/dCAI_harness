@@ -1,0 +1,26 @@
+{
+    "name": "Code Linter",
+    "description": "Run linters on code for Rust (clippy), Python (ruff, mypy), JavaScript/TypeScript (eslint), and Go (golangci-lint). Supports auto-fix mode.",
+    "category": "general",
+    "tags": [
+        "dev_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-l",
+            "description": "Force language (rust, python, js, ts, go)",
+            "required": false
+        },
+        {
+            "name": "-f",
+            "description": "Auto-fix issues",
+            "required": false
+        },
+        {
+            "name": "-q",
+            "description": "Quiet mode, only show errors",
+            "required": false
+        }
+    ]
+}

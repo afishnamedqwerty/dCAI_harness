@@ -1,0 +1,173 @@
+#!/bin/bash
+# Container Scanner - Scan Docker images for vulnerabilities
+# SPAI Security Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Container Scanner - Scan Docker images for vulnerabilities
+
+Usage: container_scanner [OPTIONS] [IMAGE...]
+
+OPTIONS:
+    -a, --all         Scan all local images
+    -r, --running     Scan only running containers
+    -l, --list        List available images
+    --json            JSON output
+    -h, --help        Show this help
+
+EXAMPLES:
+    container_scanner nginx:latest
+    container_scanner --all
+    container_scanner --running
+EOF
+}
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Container Scanner"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Check for Docker
+if ! command -v docker &>/dev/null; then
+    echo "❌ Docker not found"
+    exit 1
+fi
+
+SCAN_ALL=0
+SCAN_RUNNING=0
+LIST_ONLY=0
+IMAGES=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -a|--all) SCAN_ALL=1; shift ;;
+        -r|--running) SCAN_RUNNING=1; shift ;;
+        -l|--list) LIST_ONLY=1; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) IMAGES+=("$1"); shift ;;
+    esac
+done
+
+# List images
+list_images() {
+    echo "=== Local Docker Images ==="
+    docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
+}
+
+# List running containers
+list_running() {
+    echo "=== Running Containers ==="
+    docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+}
+
+# Scan an image
+scan_image() {
+    local image="$1"
+    echo ""
+    echo "--- Scanning: $image ---"
+    
+    # Try trivy first
+    if command -v trivy &>/dev/null; then
+        echo "Using Trivy scanner..."
+        trivy image --severity HIGH,CRITICAL "$image" 2>/dev/null | head -50 || echo "Trivy scan failed"
+        return
+    fi
+    
+    # Try grype
+    if command -v grype &>/dev/null; then
+        echo "Using Grype scanner..."
+        grype "$image" 2>/dev/null | head -50 || echo "Grype scan failed"
+        return
+    fi
+    
+    # Fallback to docker scan
+    if docker scan --version &>/dev/null 2>&1; then
+        echo "Using Docker Scan..."
+        docker scan "$image" 2>/dev/null | head -50 || echo "Docker scan failed"
+        return
+    fi
+    
+    # Manual inspection
+    echo "No scanner available (trivy, grype, docker scan)"
+    echo "Performing basic inspection..."
+    
+    echo ""
+    echo "Image history:"
+    docker history "$image" --no-trunc 2>/dev/null | head -20
+    
+    echo ""
+    echo "Image config:"
+    docker inspect "$image" --format='
+User: {{.Config.User}}
+Entrypoint: {{.Config.Entrypoint}}
+Cmd: {{.Config.Cmd}}
+Exposed Ports: {{.Config.ExposedPorts}}
+Env vars: {{len .Config.Env}}
+Labels: {{len .Config.Labels}}' 2>/dev/null
+}
+
+# Check container security settings
+check_container_security() {
+    local container="$1"
+    echo ""
+    echo "--- Security check: $container ---"
+    
+    docker inspect "$container" --format='
+Privileged: {{.HostConfig.Privileged}}
+PidMode: {{.HostConfig.PidMode}}
+NetworkMode: {{.HostConfig.NetworkMode}}
+ReadonlyRootfs: {{.HostConfig.ReadonlyRootfs}}
+CapAdd: {{.HostConfig.CapAdd}}
+CapDrop: {{.HostConfig.CapDrop}}
+SecurityOpt: {{.HostConfig.SecurityOpt}}
+User: {{.Config.User}}' 2>/dev/null
+    
+    # Check for dangerous settings
+    PRIV=$(docker inspect "$container" --format='{{.HostConfig.Privileged}}' 2>/dev/null)
+    if [ "$PRIV" = "true" ]; then
+        echo "⚠️  WARNING: Container is running in privileged mode!"
+    fi
+}
+
+# Main logic
+if [ $LIST_ONLY -eq 1 ]; then
+    list_images
+    echo ""
+    list_running
+    exit 0
+fi
+
+if [ $SCAN_ALL -eq 1 ]; then
+    echo "Scanning all local images..."
+    while read -r image; do
+        scan_image "$image"
+    done < <(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "<none>")
+    
+elif [ $SCAN_RUNNING -eq 1 ]; then
+    echo "Scanning running containers..."
+    list_running
+    echo ""
+    
+    while read -r container; do
+        image=$(docker inspect "$container" --format='{{.Config.Image}}' 2>/dev/null)
+        scan_image "$image"
+        check_container_security "$container"
+    done < <(docker ps --format "{{.Names}}")
+    
+elif [ ${#IMAGES[@]} -gt 0 ]; then
+    for image in "${IMAGES[@]}"; do
+        scan_image "$image"
+    done
+else
+    echo "No images specified. Use --help for usage."
+    echo ""
+    list_images
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "   Install 'trivy' or 'grype' for detailed vulnerability scanning"
+echo "═══════════════════════════════════════════════════════════════"

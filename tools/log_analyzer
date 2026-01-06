@@ -1,0 +1,132 @@
+#!/bin/bash
+# Log Analyzer - Parse system logs for security anomalies
+# SPAI Security Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Log Analyzer - Security-focused log analysis
+
+Usage: log_analyzer [OPTIONS] [LOG_FILE]
+
+OPTIONS:
+    -a, --auth        Analyze authentication logs (default: /var/log/auth.log)
+    -s, --syslog      Analyze syslog
+    -j, --journal     Use journalctl (systemd)
+    -f, --failed      Show failed login attempts
+    -r, --root        Show root/sudo activity
+    -n, --network     Show network-related events
+    -t, --time HOURS  Look back N hours [default: 24]
+    --json            JSON output
+    -h, --help        Show this help
+
+EXAMPLES:
+    log_analyzer --auth --failed
+    log_analyzer --journal --root --time 48
+    log_analyzer /var/log/messages
+EOF
+}
+
+HOURS=24
+MODE="auth"
+FILTER=""
+JSON_OUT=0
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -a|--auth) MODE="auth"; shift ;;
+        -s|--syslog) MODE="syslog"; shift ;;
+        -j|--journal) MODE="journal"; shift ;;
+        -f|--failed) FILTER="failed"; shift ;;
+        -r|--root) FILTER="root"; shift ;;
+        -n|--network) FILTER="network"; shift ;;
+        -t|--time) HOURS="$2"; shift 2 ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) LOG_FILE="$1"; shift ;;
+    esac
+done
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Log Analyzer - Last $HOURS hours"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+analyze_auth() {
+    local LOG="${LOG_FILE:-/var/log/auth.log}"
+    
+    if [ ! -r "$LOG" ]; then
+        echo "Cannot read $LOG (try with sudo)"
+        return 1
+    fi
+    
+    echo "=== Authentication Log Analysis: $LOG ==="
+    echo ""
+    
+    echo "--- Failed Login Attempts ---"
+    grep -i "failed\|failure\|invalid" "$LOG" 2>/dev/null | tail -20 || echo "  None found"
+    echo ""
+    
+    echo "--- Successful Root Logins ---"
+    grep -i "session opened.*root\|Accepted.*root" "$LOG" 2>/dev/null | tail -10 || echo "  None found"
+    echo ""
+    
+    echo "--- SSH Activity ---"
+    grep -i "sshd" "$LOG" 2>/dev/null | tail -20 || echo "  None found"
+    echo ""
+    
+    echo "--- Sudo Usage ---"
+    grep -i "sudo" "$LOG" 2>/dev/null | tail -20 || echo "  None found"
+    echo ""
+    
+    echo "--- Summary Statistics ---"
+    echo "  Failed logins: $(grep -ci "failed\|failure" "$LOG" 2>/dev/null || echo 0)"
+    echo "  SSH connections: $(grep -ci "sshd" "$LOG" 2>/dev/null || echo 0)"
+    echo "  Sudo commands: $(grep -ci "sudo.*COMMAND" "$LOG" 2>/dev/null || echo 0)"
+}
+
+analyze_journal() {
+    echo "=== Systemd Journal Analysis (last $HOURS hours) ==="
+    echo ""
+    
+    echo "--- Authentication Failures ---"
+    journalctl --since="$HOURS hours ago" -p err 2>/dev/null | grep -i "auth\|login\|password" | tail -20 || echo "  None found"
+    echo ""
+    
+    echo "--- Security-Related Errors ---"
+    journalctl --since="$HOURS hours ago" -p warning 2>/dev/null | grep -i "denied\|blocked\|refused\|unauthorized" | tail -20 || echo "  None found"
+    echo ""
+    
+    echo "--- Kernel Security Messages ---"
+    journalctl --since="$HOURS hours ago" -k 2>/dev/null | grep -i "segfault\|apparmor\|selinux\|audit" | tail -20 || echo "  None found"
+}
+
+analyze_syslog() {
+    local LOG="${LOG_FILE:-/var/log/syslog}"
+    
+    if [ ! -r "$LOG" ]; then
+        echo "Cannot read $LOG (try with sudo)"
+        return 1
+    fi
+    
+    echo "=== Syslog Analysis: $LOG ==="
+    echo ""
+    
+    echo "--- Error Messages ---"
+    grep -i "error\|fail\|critical" "$LOG" 2>/dev/null | tail -30 || echo "  None found"
+    echo ""
+    
+    echo "--- Network Events ---"
+    grep -i "network\|eth\|wlan\|connection" "$LOG" 2>/dev/null | tail -20 || echo "  None found"
+}
+
+case "$MODE" in
+    auth) analyze_auth ;;
+    journal) analyze_journal ;;
+    syslog) analyze_syslog ;;
+    *) analyze_auth ;;
+esac
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

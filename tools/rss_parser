@@ -1,0 +1,143 @@
+#!/bin/bash
+# RSS Parser - Parse RSS/Atom feeds
+# SPAI Web Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+RSS Parser - Parse RSS and Atom feeds
+
+Usage: rss_parser [OPTIONS] <feed_url>
+
+OPTIONS:
+    -n, --num NUM       Number of items [default: 10]
+    -f, --full          Include full content
+    -d, --date          Sort by date (newest first)
+    --json              JSON output
+    -o, --output FILE   Save to file
+    -h, --help          Show this help
+
+EXAMPLES:
+    rss_parser https://news.ycombinator.com/rss
+    rss_parser -n 5 --json https://example.com/feed.xml
+EOF
+}
+
+NUM_ITEMS=10
+FULL_CONTENT=0
+SORT_DATE=0
+JSON_OUT=0
+OUTPUT=""
+URL=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -n|--num) NUM_ITEMS="$2"; shift 2 ;;
+        -f|--full) FULL_CONTENT=1; shift ;;
+        -d|--date) SORT_DATE=1; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -o|--output) OUTPUT="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) URL="$1"; shift ;;
+    esac
+done
+
+if [ -z "$URL" ]; then
+    echo "Error: No feed URL specified"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI RSS Parser"
+echo "   Feed: $URL"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Fetch feed
+FEED=$(curl -sL --max-time 30 "$URL" 2>/dev/null)
+
+if [ -z "$FEED" ]; then
+    echo "Error: Could not fetch feed"
+    exit 1
+fi
+
+# Detect feed type and parse
+if echo "$FEED" | grep -q "<rss"; then
+    FEED_TYPE="RSS"
+elif echo "$FEED" | grep -q "<feed"; then
+    FEED_TYPE="Atom"
+else
+    echo "Unknown feed type"
+    exit 1
+fi
+
+echo "Feed type: $FEED_TYPE"
+echo ""
+
+# Parse using xmllint if available, otherwise fallback to sed/grep
+if command -v xmllint &>/dev/null; then
+    if [ "$FEED_TYPE" = "RSS" ]; then
+        # RSS parsing
+        TITLE=$(echo "$FEED" | xmllint --xpath "//channel/title/text()" - 2>/dev/null || echo "Unknown")
+        echo "Feed: $TITLE"
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        
+        # Get items
+        ITEM_COUNT=$(echo "$FEED" | xmllint --xpath "count(//item)" - 2>/dev/null || echo 0)
+        SHOW_COUNT=$((ITEM_COUNT < NUM_ITEMS ? ITEM_COUNT : NUM_ITEMS))
+        
+        for i in $(seq 1 "$SHOW_COUNT"); do
+            item_title=$(echo "$FEED" | xmllint --xpath "//item[$i]/title/text()" - 2>/dev/null || echo "")
+            item_link=$(echo "$FEED" | xmllint --xpath "//item[$i]/link/text()" - 2>/dev/null || echo "")
+            item_date=$(echo "$FEED" | xmllint --xpath "//item[$i]/pubDate/text()" - 2>/dev/null || echo "")
+            
+            echo ""
+            echo "📰 $item_title"
+            echo "   🔗 $item_link"
+            [ -n "$item_date" ] && echo "   📅 $item_date"
+            
+            if [ $FULL_CONTENT -eq 1 ]; then
+                item_desc=$(echo "$FEED" | xmllint --xpath "//item[$i]/description/text()" - 2>/dev/null || echo "")
+                if [ -n "$item_desc" ]; then
+                    # Strip HTML and limit length
+                    clean_desc=$(echo "$item_desc" | sed 's/<[^>]*>//g' | tr -s '\n' ' ' | head -c 500)
+                    echo "   📝 $clean_desc..."
+                fi
+            fi
+        done
+    else
+        # Atom parsing
+        TITLE=$(echo "$FEED" | xmllint --xpath "//*[local-name()='feed']/*[local-name()='title']/text()" - 2>/dev/null || echo "Unknown")
+        echo "Feed: $TITLE"
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        
+        ITEM_COUNT=$(echo "$FEED" | xmllint --xpath "count(//*[local-name()='entry'])" - 2>/dev/null || echo 0)
+        SHOW_COUNT=$((ITEM_COUNT < NUM_ITEMS ? ITEM_COUNT : NUM_ITEMS))
+        
+        for i in $(seq 1 "$SHOW_COUNT"); do
+            item_title=$(echo "$FEED" | xmllint --xpath "//*[local-name()='entry'][$i]/*[local-name()='title']/text()" - 2>/dev/null || echo "")
+            item_link=$(echo "$FEED" | xmllint --xpath "//*[local-name()='entry'][$i]/*[local-name()='link']/@href" - 2>/dev/null | cut -d'"' -f2 || echo "")
+            item_date=$(echo "$FEED" | xmllint --xpath "//*[local-name()='entry'][$i]/*[local-name()='updated']/text()" - 2>/dev/null || echo "")
+            
+            echo ""
+            echo "📰 $item_title"
+            echo "   🔗 $item_link"
+            [ -n "$item_date" ] && echo "   📅 $item_date"
+        done
+    fi
+else
+    # Fallback: basic grep parsing
+    echo "(Install libxml2-utils for better parsing)"
+    echo ""
+    
+    echo "$FEED" | grep -oP '<title>\K[^<]+' | head -"$NUM_ITEMS" | while read -r title; do
+        echo "📰 $title"
+    done
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

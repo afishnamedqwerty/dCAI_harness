@@ -1,0 +1,222 @@
+#!/bin/bash
+# Code Linter - Run linters on code
+# SPAI Dev Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Code Linter - Run linters on code
+
+Usage: code_linter [OPTIONS] [PATH]
+
+OPTIONS:
+    -l, --lang LANG     Force language (rust, python, js, ts, go)
+    -f, --fix           Auto-fix issues where possible
+    -q, --quiet         Only show errors
+    --json              JSON output
+    -h, --help          Show this help
+
+SUPPORTED LINTERS:
+    Rust: clippy, rustfmt
+    Python: ruff, pylint, black, mypy
+    JavaScript/TypeScript: eslint, prettier
+    Go: golangci-lint
+
+EXAMPLES:
+    code_linter src/
+    code_linter -l python --fix .
+    code_linter -l rust src/main.rs
+EOF
+}
+
+LANG=""
+FIX=""
+QUIET=""
+JSON_OUT=0
+TARGET="."
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -l|--lang) LANG="$2"; shift 2 ;;
+        -f|--fix) FIX="fix"; shift ;;
+        -q|--quiet) QUIET="quiet"; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) TARGET="$1"; shift ;;
+    esac
+done
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Code Linter"
+echo "   Target: $TARGET"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Auto-detect language
+detect_lang() {
+    local path="$1"
+    
+    if [ -f "Cargo.toml" ] || ls "$path"/*.rs &>/dev/null 2>&1; then
+        echo "rust"
+    elif [ -f "pyproject.toml" ] || [ -f "setup.py" ] || ls "$path"/*.py &>/dev/null 2>&1; then
+        echo "python"
+    elif [ -f "package.json" ]; then
+        if grep -q "typescript" package.json 2>/dev/null; then
+            echo "typescript"
+        else
+            echo "javascript"
+        fi
+    elif [ -f "go.mod" ] || ls "$path"/*.go &>/dev/null 2>&1; then
+        echo "go"
+    else
+        echo "unknown"
+    fi
+}
+
+if [ -z "$LANG" ]; then
+    LANG=$(detect_lang "$TARGET")
+fi
+
+echo "Language: $LANG"
+echo ""
+
+lint_rust() {
+    echo "=== Rust Linting ==="
+    
+    if command -v cargo &>/dev/null; then
+        echo ""
+        echo "--- cargo clippy ---"
+        if [ "$FIX" = "fix" ]; then
+            cargo clippy --fix --allow-dirty 2>&1 | head -100 || true
+        else
+            cargo clippy 2>&1 | head -100 || true
+        fi
+        
+        echo ""
+        echo "--- rustfmt check ---"
+        if [ "$FIX" = "fix" ]; then
+            cargo fmt 2>&1 || true
+            echo "Formatted."
+        else
+            cargo fmt --check 2>&1 | head -50 || true
+        fi
+    else
+        echo "cargo not found"
+    fi
+}
+
+lint_python() {
+    echo "=== Python Linting ==="
+    
+    # Try ruff first (fastest)
+    if command -v ruff &>/dev/null; then
+        echo ""
+        echo "--- ruff ---"
+        if [ "$FIX" = "fix" ]; then
+            ruff check --fix "$TARGET" 2>&1 | head -100 || true
+        else
+            ruff check "$TARGET" 2>&1 | head -100 || true
+        fi
+    fi
+    
+    # Type checking with mypy
+    if command -v mypy &>/dev/null; then
+        echo ""
+        echo "--- mypy ---"
+        mypy "$TARGET" 2>&1 | head -50 || true
+    fi
+    
+    # Black formatting
+    if command -v black &>/dev/null; then
+        echo ""
+        echo "--- black ---"
+        if [ "$FIX" = "fix" ]; then
+            black "$TARGET" 2>&1
+        else
+            black --check "$TARGET" 2>&1 | head -50 || true
+        fi
+    fi
+    
+    # Fallback to pylint
+    if ! command -v ruff &>/dev/null && command -v pylint &>/dev/null; then
+        echo ""
+        echo "--- pylint ---"
+        pylint "$TARGET" 2>&1 | head -100 || true
+    fi
+}
+
+lint_javascript() {
+    echo "=== JavaScript/TypeScript Linting ==="
+    
+    if command -v npx &>/dev/null && [ -f "package.json" ]; then
+        # ESLint
+        echo ""
+        echo "--- eslint ---"
+        if [ "$FIX" = "fix" ]; then
+            npx eslint --fix "$TARGET" 2>&1 | head -100 || true
+        else
+            npx eslint "$TARGET" 2>&1 | head -100 || true
+        fi
+        
+        # Prettier
+        echo ""
+        echo "--- prettier ---"
+        if [ "$FIX" = "fix" ]; then
+            npx prettier --write "$TARGET" 2>&1 | head -50 || true
+        else
+            npx prettier --check "$TARGET" 2>&1 | head -50 || true
+        fi
+    elif command -v eslint &>/dev/null; then
+        if [ "$FIX" = "fix" ]; then
+            eslint --fix "$TARGET" 2>&1 | head -100 || true
+        else
+            eslint "$TARGET" 2>&1 | head -100 || true
+        fi
+    else
+        echo "eslint not found. Run: npm install -g eslint"
+    fi
+}
+
+lint_go() {
+    echo "=== Go Linting ==="
+    
+    if command -v golangci-lint &>/dev/null; then
+        echo ""
+        echo "--- golangci-lint ---"
+        if [ "$FIX" = "fix" ]; then
+            golangci-lint run --fix "$TARGET" 2>&1 | head -100 || true
+        else
+            golangci-lint run "$TARGET" 2>&1 | head -100 || true
+        fi
+    elif command -v go &>/dev/null; then
+        echo ""
+        echo "--- go vet ---"
+        go vet "$TARGET/..." 2>&1 | head -50 || true
+        
+        echo ""
+        echo "--- gofmt ---"
+        if [ "$FIX" = "fix" ]; then
+            gofmt -w "$TARGET" 2>&1
+        else
+            gofmt -d "$TARGET" 2>&1 | head -50 || true
+        fi
+    else
+        echo "go not found"
+    fi
+}
+
+case "$LANG" in
+    rust|rs) lint_rust ;;
+    python|py) lint_python ;;
+    javascript|js|typescript|ts) lint_javascript ;;
+    go) lint_go ;;
+    *)
+        echo "Unknown or unsupported language: $LANG"
+        echo "Supported: rust, python, javascript, typescript, go"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

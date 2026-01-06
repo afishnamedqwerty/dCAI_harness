@@ -1,0 +1,116 @@
+#!/bin/bash
+# Exa Search - AI-powered semantic web search
+# SPAI Web Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Exa Search - AI-powered semantic web search
+
+Usage: exa_search [OPTIONS] <query>
+
+OPTIONS:
+    -n, --num NUM     Number of results [default: 10]
+    -t, --type TYPE   Search type: neural, keyword, auto [default: auto]
+    -d, --domain DOM  Limit to domain
+    -c, --contents    Include page contents
+    --json            JSON output
+    -h, --help        Show this help
+
+ENVIRONMENT:
+    EXA_API_KEY       Required API key from exa.ai
+
+EXAMPLES:
+    exa_search "rust async programming best practices"
+    exa_search -n 5 --contents "kubernetes security"
+    exa_search -d github.com "machine learning projects"
+EOF
+}
+
+NUM_RESULTS=10
+SEARCH_TYPE="auto"
+DOMAIN=""
+CONTENTS=0
+JSON_OUT=0
+QUERY=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -n|--num) NUM_RESULTS="$2"; shift 2 ;;
+        -t|--type) SEARCH_TYPE="$2"; shift 2 ;;
+        -d|--domain) DOMAIN="$2"; shift 2 ;;
+        -c|--contents) CONTENTS=1; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) QUERY="$*"; break ;;
+    esac
+done
+
+if [ -z "$QUERY" ]; then
+    echo "Error: No query specified"
+    usage
+    exit 1
+fi
+
+# Check for API key
+if [ -z "${EXA_API_KEY:-}" ]; then
+    echo "Error: EXA_API_KEY environment variable not set"
+    echo "Get your API key at https://exa.ai"
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Exa Search"
+echo "   Query: $QUERY"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Build request
+INCLUDE_DOMAINS=""
+if [ -n "$DOMAIN" ]; then
+    INCLUDE_DOMAINS="\"includeDomains\": [\"$DOMAIN\"],"
+fi
+
+CONTENTS_OPT=""
+if [ $CONTENTS -eq 1 ]; then
+    CONTENTS_OPT="\"contents\": {\"text\": true},"
+fi
+
+REQUEST_BODY=$(cat <<EOF
+{
+    "query": "$QUERY",
+    "numResults": $NUM_RESULTS,
+    "type": "$SEARCH_TYPE",
+    $INCLUDE_DOMAINS
+    $CONTENTS_OPT
+    "useAutoprompt": true
+}
+EOF
+)
+
+# Make API request
+RESPONSE=$(curl -s -X POST "https://api.exa.ai/search" \
+    -H "accept: application/json" \
+    -H "content-type: application/json" \
+    -H "x-api-key: $EXA_API_KEY" \
+    -d "$REQUEST_BODY")
+
+if [ $JSON_OUT -eq 1 ]; then
+    echo "$RESPONSE"
+    exit 0
+fi
+
+# Parse and display results
+if command -v jq &>/dev/null; then
+    echo "$RESPONSE" | jq -r '.results[] | "
+Title: \(.title)
+URL: \(.url)
+Score: \(.score)
+---"' 2>/dev/null || echo "Error parsing response: $RESPONSE"
+else
+    echo "$RESPONSE"
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

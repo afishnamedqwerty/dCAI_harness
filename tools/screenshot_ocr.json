@@ -1,0 +1,31 @@
+{
+    "name": "Screenshot OCR",
+    "description": "Capture screenshots and extract text using Tesseract OCR. Supports full screen, window, and area capture with multiple language support.",
+    "category": "general",
+    "tags": [
+        "web_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-s",
+            "description": "Capture screenshot first",
+            "required": false
+        },
+        {
+            "name": "-a",
+            "description": "Select area to capture",
+            "required": false
+        },
+        {
+            "name": "-l",
+            "description": "OCR language (e.g., eng, deu)",
+            "required": false
+        },
+        {
+            "name": "-o",
+            "description": "Save extracted text to file",
+            "required": false
+        }
+    ]
+}

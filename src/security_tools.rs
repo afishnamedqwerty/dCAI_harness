@@ -54,6 +54,8 @@ pub struct ToolMetadata {
     #[serde(default)]
     pub category: SecurityCategory,
     #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
     pub args: Vec<ToolArg>,
     #[serde(default)]
     pub requires_sudo: bool,
@@ -83,6 +85,8 @@ pub struct SecurityTool {
     pub description: String,
     /// Tool category
     pub category: SecurityCategory,
+    /// Tags for filtering (e.g., "security_tools", "web_tools")
+    pub tags: Vec<String>,
     /// Path to executable
     pub command_path: PathBuf,
     /// Whether sudo is required
@@ -247,6 +251,7 @@ impl SecurityToolRegistry {
                 format!("MCP security tool: {}", id)
             }),
             category: metadata.as_ref().map(|m| m.category.clone()).unwrap_or_default(),
+            tags: metadata.as_ref().map(|m| m.tags.clone()).unwrap_or_default(),
             command_path,
             requires_sudo: metadata.as_ref().map(|m| m.requires_sudo).unwrap_or(false),
             timeout_secs: metadata.as_ref().and_then(|m| m.timeout_secs),
@@ -281,6 +286,7 @@ impl SecurityToolRegistry {
                 format!("Security tool: {}", id)
             }),
             category: metadata.as_ref().map(|m| m.category.clone()).unwrap_or_default(),
+            tags: metadata.as_ref().map(|m| m.tags.clone()).unwrap_or_default(),
             command_path: path.to_path_buf(),
             requires_sudo: metadata.as_ref().map(|m| m.requires_sudo).unwrap_or(false),
             timeout_secs: metadata.as_ref().and_then(|m| m.timeout_secs),
@@ -330,6 +336,42 @@ impl SecurityToolRegistry {
     /// Get tools by category
     pub fn by_category(&self, category: SecurityCategory) -> Vec<&SecurityTool> {
         self.tools.values().filter(|t| t.category == category).collect()
+    }
+
+    /// Get tools matching any of the specified tags.
+    /// 
+    /// If tags contains "all", returns all tools.
+    /// Otherwise, returns tools that have at least one matching tag.
+    pub fn by_tags(&self, tags: &[&str]) -> Vec<&SecurityTool> {
+        // "all" tag means return everything
+        if tags.iter().any(|t| t.eq_ignore_ascii_case("all")) {
+            return self.tools.values().collect();
+        }
+
+        self.tools.values()
+            .filter(|tool| {
+                tool.tags.iter().any(|tool_tag| {
+                    tags.iter().any(|filter_tag| tool_tag.eq_ignore_ascii_case(filter_tag))
+                })
+            })
+            .collect()
+    }
+
+    /// Get all unique tags across all tools
+    pub fn all_tags(&self) -> Vec<String> {
+        let mut tags: Vec<String> = self.tools.values()
+            .flat_map(|t| t.tags.iter().cloned())
+            .collect();
+        tags.sort();
+        tags.dedup();
+        tags
+    }
+
+    /// Check if a tool has a specific tag
+    pub fn has_tag(&self, tool_id: &str, tag: &str) -> bool {
+        self.tools.get(tool_id)
+            .map(|t| t.tags.iter().any(|t| t.eq_ignore_ascii_case(tag)))
+            .unwrap_or(false)
     }
 
     /// Get a formatted description of all tools for LLM consumption
@@ -540,6 +582,232 @@ impl Tool for RunSecurityTool {
     }
 }
 
+/// Helper to create tools filtered by tags for agent use.
+/// 
+/// This creates ListSecurityTools and RunSecurityTool instances that only
+/// expose tools matching the specified tags.
+pub struct TaggedSecurityTools {
+    registry: Arc<SecurityToolRegistry>,
+    tags: Vec<String>,
+}
+
+impl TaggedSecurityTools {
+    /// Create a new tagged tools helper.
+    /// 
+    /// # Arguments
+    /// * `registry` - The security tool registry
+    /// * `tags` - Tags to filter by. Use "all" to include all tools.
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let registry = Arc::new(SecurityToolRegistry::discover("tools"));
+    /// let security_tools = TaggedSecurityTools::new(registry.clone(), &["security_tools"]);
+    /// let tools = security_tools.create_tools();
+    /// ```
+    pub fn new(registry: Arc<SecurityToolRegistry>, tags: &[&str]) -> Self {
+        Self {
+            registry,
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// Get the filtered tools from the registry
+    pub fn filtered_tools(&self) -> Vec<&SecurityTool> {
+        let tag_refs: Vec<&str> = self.tags.iter().map(|s| s.as_str()).collect();
+        self.registry.by_tags(&tag_refs)
+    }
+
+    /// Create ListSecurityTools and RunSecurityTool for agents.
+    /// Returns a vector of Arc<dyn Tool> ready to add to an agent.
+    pub fn create_tools(&self) -> Vec<Arc<dyn Tool>> {
+        vec![
+            Arc::new(TaggedListSecurityTools::new(
+                self.registry.clone(),
+                self.tags.clone(),
+            )) as Arc<dyn Tool>,
+            Arc::new(TaggedRunSecurityTool::new(
+                self.registry.clone(),
+                self.tags.clone(),
+            )) as Arc<dyn Tool>,
+        ]
+    }
+
+    /// Get the tags this helper filters by
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
+}
+
+/// List security tools filtered by tags
+pub struct TaggedListSecurityTools {
+    registry: Arc<SecurityToolRegistry>,
+    tags: Vec<String>,
+}
+
+impl TaggedListSecurityTools {
+    /// Create a new tagged list tools
+    pub fn new(registry: Arc<SecurityToolRegistry>, tags: Vec<String>) -> Self {
+        Self { registry, tags }
+    }
+}
+
+#[async_trait]
+impl Tool for TaggedListSecurityTools {
+    fn id(&self) -> &str {
+        "list_security_tools"
+    }
+
+    fn name(&self) -> &str {
+        "List Security Tools"
+    }
+
+    fn description(&self) -> &str {
+        "List available security tools that can be executed. \
+         Returns tool names, IDs, descriptions, categories, and tags."
+    }
+
+    fn input_schema(&self) -> JsonSchema {
+        let mut properties = HashMap::new();
+        properties.insert(
+            "category".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "enum": ["network", "process", "rootkit", "hardening", "filesystem", "general"],
+                "description": "Optional: filter by category"
+            }),
+        );
+        JsonSchema::object(properties)
+    }
+
+    async fn execute(&self, params: Value, _ctx: &ToolContext) -> Result<ToolOutput> {
+        let category_filter = params
+            .get("category")
+            .and_then(|v| v.as_str())
+            .and_then(|s| match s {
+                "network" => Some(SecurityCategory::Network),
+                "process" => Some(SecurityCategory::Process),
+                "rootkit" => Some(SecurityCategory::Rootkit),
+                "hardening" => Some(SecurityCategory::Hardening),
+                "filesystem" => Some(SecurityCategory::Filesystem),
+                "general" => Some(SecurityCategory::General),
+                _ => None,
+            });
+
+        // First filter by tags
+        let tag_refs: Vec<&str> = self.tags.iter().map(|s| s.as_str()).collect();
+        let mut tools: Vec<&SecurityTool> = self.registry.by_tags(&tag_refs);
+
+        // Then filter by category if specified
+        if let Some(cat) = category_filter {
+            tools.retain(|t| t.category == cat);
+        }
+
+        if tools.is_empty() {
+            return Ok(ToolOutput::success(format!(
+                "No security tools found matching tags: {:?}",
+                self.tags
+            )));
+        }
+
+        let mut output = format!("Found {} security tools:\n\n", tools.len());
+        for tool in tools {
+            let tags_str = if tool.tags.is_empty() {
+                String::new()
+            } else {
+                format!("\n  Tags: {}", tool.tags.join(", "))
+            };
+            output.push_str(&format!(
+                "• {} (id: '{}')\n  Category: {}\n  Description: {}\n  Sudo: {}{}\n\n",
+                tool.name, tool.id, tool.category, tool.description, tool.requires_sudo, tags_str
+            ));
+        }
+
+        Ok(ToolOutput::success(output))
+    }
+}
+
+/// Run security tool filtered by tags
+pub struct TaggedRunSecurityTool {
+    registry: Arc<SecurityToolRegistry>,
+    tags: Vec<String>,
+}
+
+impl TaggedRunSecurityTool {
+    /// Create a new tagged run tool
+    pub fn new(registry: Arc<SecurityToolRegistry>, tags: Vec<String>) -> Self {
+        Self { registry, tags }
+    }
+}
+
+#[async_trait]
+impl Tool for TaggedRunSecurityTool {
+    fn id(&self) -> &str {
+        "run_security_tool"
+    }
+
+    fn name(&self) -> &str {
+        "Run Security Tool"
+    }
+
+    fn description(&self) -> &str {
+        "Execute a security tool from the registry by its ID. \
+         Use list_security_tools first to see available tools and their IDs."
+    }
+
+    fn input_schema(&self) -> JsonSchema {
+        let mut properties = HashMap::new();
+        properties.insert(
+            "tool_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "The ID of the tool to execute (e.g., 'portlist', 'chkrootkit')"
+            }),
+        );
+        properties.insert(
+            "args".to_string(),
+            serde_json::json!({
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional command-line arguments to pass to the tool"
+            }),
+        );
+        JsonSchema::object(properties).with_required(vec!["tool_id".to_string()])
+    }
+
+    async fn execute(&self, params: Value, _ctx: &ToolContext) -> Result<ToolOutput> {
+        let tool_id = params
+            .get("tool_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| crate::error::Error::InvalidInput("Missing 'tool_id' parameter".into()))?;
+
+        // Check if the tool is allowed by tags
+        let tag_refs: Vec<&str> = self.tags.iter().map(|s| s.as_str()).collect();
+        let allowed_tools = self.registry.by_tags(&tag_refs);
+        
+        if !allowed_tools.iter().any(|t| t.id == tool_id) {
+            return Ok(ToolOutput::failure(format!(
+                "Tool '{}' is not available with current tags: {:?}. \
+                 Use list_security_tools to see available tools.",
+                tool_id, self.tags
+            )));
+        }
+
+        let args: Vec<String> = params
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        tracing::info!("Executing security tool '{}' with args: {:?}", tool_id, args);
+
+        self.registry.execute(tool_id, &args)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,6 +824,7 @@ mod tests {
             "name": "Test Tool",
             "description": "A test tool",
             "category": "network",
+            "tags": ["security_tools", "network_tools"],
             "requires_sudo": true,
             "args": [
                 {"name": "verbose", "description": "Enable verbose output", "required": false}
@@ -567,6 +836,18 @@ mod tests {
         assert_eq!(metadata.category, SecurityCategory::Network);
         assert!(metadata.requires_sudo);
         assert_eq!(metadata.args.len(), 1);
+        assert_eq!(metadata.tags, vec!["security_tools", "network_tools"]);
+    }
+
+    #[test]
+    fn test_tool_metadata_deserialize_no_tags() {
+        let json = r#"{
+            "name": "Test Tool",
+            "description": "A test tool"
+        }"#;
+
+        let metadata: ToolMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(metadata.tags.len(), 0);
     }
 
     #[test]
@@ -575,3 +856,4 @@ mod tests {
         assert!(registry.is_empty());
     }
 }
+

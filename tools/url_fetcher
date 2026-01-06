@@ -1,0 +1,139 @@
+#!/bin/bash
+# URL Fetcher - Fetch web pages and convert to markdown
+# SPAI Web Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+URL Fetcher - Fetch web pages and convert to text/markdown
+
+Usage: url_fetcher [OPTIONS] <url>
+
+OPTIONS:
+    -o, --output FILE   Save to file
+    -m, --markdown      Convert to markdown (requires pandoc)
+    -t, --text          Plain text only (strip HTML)
+    -j, --json          JSON metadata output
+    -H, --header HDR    Add custom header
+    -a, --agent AGENT   User agent string
+    --timeout SEC       Request timeout [default: 30]
+    -h, --help          Show this help
+
+EXAMPLES:
+    url_fetcher https://example.com
+    url_fetcher -m -o page.md https://example.com
+    url_fetcher -t https://news.site.com/article
+EOF
+}
+
+OUTPUT=""
+MARKDOWN=0
+TEXT_ONLY=0
+JSON_OUT=0
+HEADERS=()
+USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+TIMEOUT=30
+URL=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -o|--output) OUTPUT="$2"; shift 2 ;;
+        -m|--markdown) MARKDOWN=1; shift ;;
+        -t|--text) TEXT_ONLY=1; shift ;;
+        -j|--json) JSON_OUT=1; shift ;;
+        -H|--header) HEADERS+=("-H" "$2"); shift 2 ;;
+        -a|--agent) USER_AGENT="$2"; shift 2 ;;
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) URL="$1"; shift ;;
+    esac
+done
+
+if [ -z "$URL" ]; then
+    echo "Error: No URL specified"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI URL Fetcher"
+echo "   URL: $URL"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Fetch the page
+RESPONSE=$(curl -sL --max-time "$TIMEOUT" \
+    -A "$USER_AGENT" \
+    "${HEADERS[@]}" \
+    -w "\n---HTTP_CODE:%{http_code}---" \
+    "$URL" 2>/dev/null)
+
+HTTP_CODE=$(echo "$RESPONSE" | grep -oP '---HTTP_CODE:\K[0-9]+---' | tr -d '-')
+CONTENT=$(echo "$RESPONSE" | sed 's/---HTTP_CODE:[0-9]*---$//')
+
+echo "Status: $HTTP_CODE"
+echo ""
+
+if [ "$HTTP_CODE" != "200" ]; then
+    echo "Warning: Non-200 response code"
+fi
+
+# Process content
+process_content() {
+    local content="$1"
+    
+    if [ $MARKDOWN -eq 1 ]; then
+        if command -v pandoc &>/dev/null; then
+            echo "$content" | pandoc -f html -t markdown --wrap=none 2>/dev/null
+        else
+            echo "pandoc not installed, falling back to text extraction"
+            echo "$content" | sed 's/<[^>]*>//g' | tr -s '\n' | head -500
+        fi
+    elif [ $TEXT_ONLY -eq 1 ]; then
+        # Strip HTML tags and clean up
+        if command -v lynx &>/dev/null; then
+            echo "$content" | lynx -stdin -dump -width=80 2>/dev/null | head -500
+        elif command -v w3m &>/dev/null; then
+            echo "$content" | w3m -T text/html -dump 2>/dev/null | head -500
+        else
+            # Basic HTML stripping
+            echo "$content" | sed 's/<script[^>]*>.*<\/script>//g' | \
+                sed 's/<style[^>]*>.*<\/style>//g' | \
+                sed 's/<[^>]*>//g' | \
+                tr -s '\n' | \
+                head -500
+        fi
+    else
+        echo "$content" | head -1000
+    fi
+}
+
+if [ $JSON_OUT -eq 1 ]; then
+    # Extract metadata
+    TITLE=$(echo "$CONTENT" | grep -oP '<title[^>]*>\K[^<]+' | head -1 || echo "")
+    DESCRIPTION=$(echo "$CONTENT" | grep -oP 'meta.*description.*content="\K[^"]+' | head -1 || echo "")
+    
+    cat <<EOF
+{
+    "url": "$URL",
+    "status": $HTTP_CODE,
+    "title": "$TITLE",
+    "description": "$DESCRIPTION",
+    "content_length": ${#CONTENT}
+}
+EOF
+else
+    PROCESSED=$(process_content "$CONTENT")
+    
+    if [ -n "$OUTPUT" ]; then
+        echo "$PROCESSED" > "$OUTPUT"
+        echo "Saved to: $OUTPUT"
+        echo "Size: $(wc -c < "$OUTPUT") bytes"
+    else
+        echo "$PROCESSED"
+    fi
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

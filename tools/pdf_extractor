@@ -1,0 +1,164 @@
+#!/bin/bash
+# PDF Extractor - Extract text and tables from PDFs
+# SPAI Web Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+PDF Extractor - Extract text from PDF files
+
+Usage: pdf_extractor [OPTIONS] <pdf_file>
+
+OPTIONS:
+    -p, --pages RANGE   Page range (e.g., 1-5, 1,3,5)
+    -t, --tables        Extract tables (requires tabula)
+    -m, --markdown      Output as markdown
+    -o, --output FILE   Save to file
+    --json              JSON output
+    -h, --help          Show this help
+
+REQUIRES:
+    pdftotext (poppler-utils), tabula-java (for tables)
+
+EXAMPLES:
+    pdf_extractor document.pdf
+    pdf_extractor -p 1-5 report.pdf
+    pdf_extractor -t -o data.csv spreadsheet.pdf
+EOF
+}
+
+PAGES=""
+TABLES=0
+MARKDOWN=0
+OUTPUT=""
+JSON_OUT=0
+PDF=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--pages) PAGES="$2"; shift 2 ;;
+        -t|--tables) TABLES=1; shift ;;
+        -m|--markdown) MARKDOWN=1; shift ;;
+        -o|--output) OUTPUT="$2"; shift 2 ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) PDF="$1"; shift ;;
+    esac
+done
+
+if [ -z "$PDF" ] || [ ! -f "$PDF" ]; then
+    echo "Error: No PDF file specified or file not found"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI PDF Extractor"
+echo "   File: $PDF"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Get PDF info
+if command -v pdfinfo &>/dev/null; then
+    echo "=== Document Info ==="
+    pdfinfo "$PDF" 2>/dev/null | head -10
+    echo ""
+fi
+
+# Extract text
+extract_text() {
+    local pdf="$1"
+    local pages="$2"
+    
+    if command -v pdftotext &>/dev/null; then
+        PAGE_ARGS=""
+        if [ -n "$pages" ]; then
+            # Parse page range
+            if [[ "$pages" =~ ^[0-9]+-[0-9]+$ ]]; then
+                FIRST=$(echo "$pages" | cut -d'-' -f1)
+                LAST=$(echo "$pages" | cut -d'-' -f2)
+                PAGE_ARGS="-f $FIRST -l $LAST"
+            fi
+        fi
+        
+        pdftotext $PAGE_ARGS -layout "$pdf" - 2>/dev/null
+    elif command -v mutool &>/dev/null; then
+        mutool draw -F txt "$pdf" 2>/dev/null
+    else
+        echo "Error: No PDF text extractor found"
+        echo "Install poppler-utils: sudo apt install poppler-utils"
+        exit 1
+    fi
+}
+
+# Extract tables
+extract_tables() {
+    local pdf="$1"
+    
+    if command -v tabula &>/dev/null; then
+        tabula -p all -f CSV "$pdf" 2>/dev/null
+    elif [ -f "/opt/tabula/tabula.jar" ]; then
+        java -jar /opt/tabula/tabula.jar -p all -f CSV "$pdf" 2>/dev/null
+    else
+        echo "Table extraction requires tabula"
+        echo "Install: pip install tabula-py"
+        return 1
+    fi
+}
+
+# Convert to markdown
+to_markdown() {
+    local text="$1"
+    
+    # Basic conversion
+    echo "$text" | \
+        # Convert headers (lines that are all caps or followed by underlines)
+        sed 's/^[A-Z][A-Z ]*$/# &/' | \
+        # Preserve paragraphs
+        cat
+}
+
+# Main extraction
+if [ $TABLES -eq 1 ]; then
+    echo "=== Extracted Tables ==="
+    EXTRACTED=$(extract_tables "$PDF")
+else
+    echo "=== Extracted Text ==="
+    EXTRACTED=$(extract_text "$PDF" "$PAGES")
+fi
+
+if [ $MARKDOWN -eq 1 ]; then
+    EXTRACTED=$(to_markdown "$EXTRACTED")
+fi
+
+if [ $JSON_OUT -eq 1 ]; then
+    ESCAPED=$(echo "$EXTRACTED" | jq -Rs .)
+    PAGE_COUNT=$(pdfinfo "$PDF" 2>/dev/null | grep Pages | awk '{print $2}' || echo "?")
+    cat <<EOF
+{
+    "file": "$PDF",
+    "pages": "$PAGE_COUNT",
+    "text": $ESCAPED,
+    "char_count": ${#EXTRACTED}
+}
+EOF
+else
+    echo "$EXTRACTED" | head -500
+    
+    TOTAL_CHARS=${#EXTRACTED}
+    if [ $TOTAL_CHARS -gt 20000 ]; then
+        echo ""
+        echo "... (truncated, total $TOTAL_CHARS characters)"
+    fi
+fi
+
+# Save if requested
+if [ -n "$OUTPUT" ]; then
+    echo "$EXTRACTED" > "$OUTPUT"
+    echo ""
+    echo "Saved to: $OUTPUT"
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

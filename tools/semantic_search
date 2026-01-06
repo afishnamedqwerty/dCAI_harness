@@ -1,0 +1,124 @@
+#!/bin/bash
+# Semantic Search - Search file contents using ripgrep
+# SPAI Filesystem Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Semantic Search - Search file contents
+
+Usage: semantic_search [OPTIONS] <pattern> [path]
+
+OPTIONS:
+    -t, --type TYPE     File type (py, rs, js, ts, md, etc.)
+    -i, --ignore-case   Case insensitive search
+    -w, --word          Match whole words only
+    -c, --context NUM   Lines of context [default: 2]
+    -l, --files-only    List matching files only
+    -n, --num NUM       Max results [default: 50]
+    --hidden            Search hidden files
+    --json              JSON output
+    -h, --help          Show this help
+
+EXAMPLES:
+    semantic_search "TODO" src/
+    semantic_search -t py "def async" .
+    semantic_search -i -c 5 "error handling"
+EOF
+}
+
+FILE_TYPE=""
+IGNORE_CASE=""
+WORD=""
+CONTEXT=2
+FILES_ONLY=""
+MAX_RESULTS=50
+HIDDEN=""
+JSON_OUT=0
+PATTERN=""
+SEARCH_PATH="."
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -t|--type) FILE_TYPE="$2"; shift 2 ;;
+        -i|--ignore-case) IGNORE_CASE="-i"; shift ;;
+        -w|--word) WORD="-w"; shift ;;
+        -c|--context) CONTEXT="$2"; shift 2 ;;
+        -l|--files-only) FILES_ONLY="-l"; shift ;;
+        -n|--num) MAX_RESULTS="$2"; shift 2 ;;
+        --hidden) HIDDEN="--hidden"; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *)
+            if [ -z "$PATTERN" ]; then
+                PATTERN="$1"
+            else
+                SEARCH_PATH="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$PATTERN" ]; then
+    echo "Error: No search pattern specified"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Semantic Search"
+echo "   Pattern: $PATTERN"
+echo "   Path: $SEARCH_PATH"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Build ripgrep command
+RG_ARGS=(
+    --color=never
+    --line-number
+    -C "$CONTEXT"
+    -m "$MAX_RESULTS"
+    $IGNORE_CASE
+    $WORD
+    $FILES_ONLY
+    $HIDDEN
+)
+
+# Add file type filter
+if [ -n "$FILE_TYPE" ]; then
+    RG_ARGS+=(-t "$FILE_TYPE")
+fi
+
+# Check for ripgrep
+if command -v rg &>/dev/null; then
+    if [ $JSON_OUT -eq 1 ]; then
+        RG_ARGS+=(--json)
+        rg "${RG_ARGS[@]}" "$PATTERN" "$SEARCH_PATH" 2>/dev/null | head -1000
+    else
+        rg "${RG_ARGS[@]}" "$PATTERN" "$SEARCH_PATH" 2>/dev/null | head -500
+        
+        # Show count
+        echo ""
+        TOTAL=$(rg -c "$PATTERN" "$SEARCH_PATH" 2>/dev/null | wc -l || echo 0)
+        echo "Found matches in $TOTAL files"
+    fi
+elif command -v grep &>/dev/null; then
+    echo "(Using grep fallback - install ripgrep for better results)"
+    echo ""
+    
+    GREP_ARGS=(-rn $IGNORE_CASE)
+    
+    if [ -n "$FILE_TYPE" ]; then
+        GREP_ARGS+=(--include="*.$FILE_TYPE")
+    fi
+    
+    grep "${GREP_ARGS[@]}" "$PATTERN" "$SEARCH_PATH" 2>/dev/null | head -500
+else
+    echo "Error: Neither ripgrep nor grep found"
+    exit 1
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

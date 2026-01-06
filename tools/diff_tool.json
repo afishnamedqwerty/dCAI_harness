@@ -1,0 +1,32 @@
+{
+    "name": "Diff Tool",
+    "description": "Compare files and directories with support for unified, side-by-side, and context diff formats.",
+    "category": "filesystem",
+    "tags": [
+        "filesystem_tools",
+        "dev_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-s",
+            "description": "Side-by-side output",
+            "required": false
+        },
+        {
+            "name": "-u",
+            "description": "Unified diff format",
+            "required": false
+        },
+        {
+            "name": "-r",
+            "description": "Recursive comparison",
+            "required": false
+        },
+        {
+            "name": "-q",
+            "description": "Brief output",
+            "required": false
+        }
+    ]
+}

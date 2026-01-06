@@ -1,0 +1,36 @@
+{
+    "name": "Log Analyzer",
+    "description": "Security-focused log analysis tool. Parses auth.log, syslog, and journalctl for failed logins, root activity, SSH connections, and security anomalies.",
+    "category": "general",
+    "tags": [
+        "security_tools"
+    ],
+    "requires_sudo": true,
+    "args": [
+        {
+            "name": "--auth",
+            "description": "Analyze authentication logs",
+            "required": false
+        },
+        {
+            "name": "--journal",
+            "description": "Use systemd journalctl",
+            "required": false
+        },
+        {
+            "name": "--failed",
+            "description": "Show failed login attempts",
+            "required": false
+        },
+        {
+            "name": "--root",
+            "description": "Show root/sudo activity",
+            "required": false
+        },
+        {
+            "name": "--time",
+            "description": "Look back N hours",
+            "required": false
+        }
+    ]
+}

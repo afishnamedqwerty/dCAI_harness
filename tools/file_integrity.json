@@ -1,0 +1,32 @@
+{
+    "name": "File Integrity Monitor",
+    "description": "Hash-based file change detection. Creates baselines of file hashes and detects modifications, additions, and deletions. Useful for detecting unauthorized system changes.",
+    "category": "filesystem",
+    "tags": [
+        "security_tools",
+        "filesystem_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "init",
+            "description": "Initialize baseline for a directory",
+            "required": false
+        },
+        {
+            "name": "check",
+            "description": "Check files against baseline",
+            "required": false
+        },
+        {
+            "name": "update",
+            "description": "Update baseline with current state",
+            "required": false
+        },
+        {
+            "name": "list",
+            "description": "List monitored paths",
+            "required": false
+        }
+    ]
+}

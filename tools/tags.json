@@ -1,0 +1,82 @@
+{
+    "version": "1.0",
+    "description": "SPAI Tool Tags Reference - All available tool tag categories",
+    "tags": {
+        "security_tools": {
+            "description": "Security auditing, vulnerability scanning, and system hardening tools",
+            "tools": [
+                "file_integrity",
+                "log_analyzer",
+                "sandbox_exec",
+                "cve_scanner",
+                "firewall_auditor",
+                "ssh_auditor",
+                "container_scanner",
+                "memory_forensics",
+                "portlist",
+                "chkrootkit",
+                "dep_auditor"
+            ]
+        },
+        "web_tools": {
+            "description": "Web scraping, API interaction, and content extraction tools",
+            "tools": [
+                "exa_search",
+                "url_fetcher",
+                "screenshot_ocr",
+                "api_client",
+                "rss_parser",
+                "pdf_extractor"
+            ]
+        },
+        "filesystem_tools": {
+            "description": "File system operations, search, and manipulation tools",
+            "tools": [
+                "semantic_search",
+                "file_metadata",
+                "diff_tool",
+                "archive_handler",
+                "file_integrity",
+                "pdf_extractor"
+            ]
+        },
+        "dev_tools": {
+            "description": "Development workflow tools for linting, testing, and version control",
+            "tools": [
+                "code_linter",
+                "test_runner",
+                "git_ops",
+                "dep_auditor",
+                "sandbox_exec",
+                "container_scanner",
+                "semantic_search",
+                "diff_tool",
+                "api_client"
+            ]
+        },
+        "network_tools": {
+            "description": "Network analysis and monitoring tools",
+            "tools": [
+                "portlist",
+                "firewall_auditor"
+            ]
+        },
+        "rootkit_tools": {
+            "description": "Rootkit detection and system integrity tools",
+            "tools": [
+                "chkrootkit"
+            ]
+        },
+        "all": {
+            "description": "Special tag that includes all tools regardless of category",
+            "tools": [
+                "*"
+            ]
+        }
+    },
+    "usage": {
+        "rust_example": "TaggedSecurityTools::new(registry, &[\"security_tools\"])",
+        "multi_tag": "TaggedSecurityTools::new(registry, &[\"security_tools\", \"web_tools\"])",
+        "all_tools": "TaggedSecurityTools::new(registry, &[\"all\"])"
+    }
+}

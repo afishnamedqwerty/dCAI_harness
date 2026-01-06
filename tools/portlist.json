@@ -2,6 +2,10 @@
     "name": "Port List",
     "description": "Comprehensive port scanning and analysis tool. Lists all listening ports and established connections with process information. Can highlight suspicious ports (4444, 31337, etc.) commonly used by malware.",
     "category": "network",
+    "tags": [
+        "security_tools",
+        "network_tools"
+    ],
     "requires_sudo": true,
     "args": [
         {

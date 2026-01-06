@@ -1,0 +1,227 @@
+#!/bin/bash
+# Git Ops - Git operations helper
+# SPAI Dev Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Git Ops - Git operations helper
+
+Usage: git_ops [COMMAND] [OPTIONS]
+
+COMMANDS:
+    status              Show status summary
+    diff                Show diff summary
+    log                 Show recent commits
+    branch              List/manage branches
+    commit              Create commit
+    push                Push changes
+    stash               Stash operations
+    blame               Show file blame
+    history             File history
+
+OPTIONS:
+    -n, --num NUM       Number of items [default: 10]
+    -f, --file FILE     Target file
+    -m, --message MSG   Commit message
+    --json              JSON output
+    -h, --help          Show this help
+
+EXAMPLES:
+    git_ops status
+    git_ops log -n 20
+    git_ops commit -m "Fix bug"
+    git_ops diff
+EOF
+}
+
+COMMAND="${1:-status}"
+shift || true
+
+NUM=10
+FILE=""
+MESSAGE=""
+JSON_OUT=0
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -n|--num) NUM="$2"; shift 2 ;;
+        -f|--file) FILE="$2"; shift 2 ;;
+        -m|--message) MESSAGE="$2"; shift 2 ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) [ -z "$FILE" ] && FILE="$1"; shift ;;
+    esac
+done
+
+# Check if in git repo
+if ! git rev-parse --git-dir &>/dev/null; then
+    echo "Error: Not in a git repository"
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Git Ops"
+echo "   Repository: $(basename "$(git rev-parse --show-toplevel)")"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+cmd_status() {
+    echo "=== Git Status ==="
+    echo ""
+    
+    BRANCH=$(git branch --show-current)
+    echo "Branch: $BRANCH"
+    
+    # Ahead/behind
+    UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "")
+    if [ -n "$UPSTREAM" ]; then
+        AHEAD=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
+        BEHIND=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)
+        echo "Upstream: $UPSTREAM (↑$AHEAD ↓$BEHIND)"
+    fi
+    
+    echo ""
+    echo "--- Changes ---"
+    git status -s 2>/dev/null | head -30
+    
+    STAGED=$(git diff --cached --stat 2>/dev/null | tail -1)
+    UNSTAGED=$(git diff --stat 2>/dev/null | tail -1)
+    
+    echo ""
+    echo "Staged: ${STAGED:-none}"
+    echo "Unstaged: ${UNSTAGED:-none}"
+}
+
+cmd_diff() {
+    echo "=== Git Diff ==="
+    echo ""
+    
+    if [ -n "$FILE" ]; then
+        git diff "$FILE" 2>/dev/null | head -100
+    else
+        echo "--- Staged Changes ---"
+        git diff --cached --stat 2>/dev/null
+        echo ""
+        echo "--- Unstaged Changes ---"
+        git diff --stat 2>/dev/null
+        echo ""
+        echo "--- Full Diff (first 100 lines) ---"
+        git diff 2>/dev/null | head -100
+    fi
+}
+
+cmd_log() {
+    echo "=== Recent Commits ==="
+    echo ""
+    
+    if [ -n "$FILE" ]; then
+        git log --oneline -n "$NUM" -- "$FILE" 2>/dev/null
+    else
+        git log --oneline --graph -n "$NUM" 2>/dev/null
+    fi
+    
+    echo ""
+    echo "--- Detailed (last 3) ---"
+    git log --format="%h %an <%ae>%n%s%n%b" -n 3 2>/dev/null
+}
+
+cmd_branch() {
+    echo "=== Branches ==="
+    echo ""
+    
+    echo "--- Local ---"
+    git branch -v 2>/dev/null
+    
+    echo ""
+    echo "--- Remote ---"
+    git branch -rv 2>/dev/null | head -20
+    
+    echo ""
+    echo "--- Recent ---"
+    git for-each-ref --sort=-committerdate --format='%(refname:short) (%(committerdate:relative))' refs/heads/ 2>/dev/null | head -10
+}
+
+cmd_commit() {
+    echo "=== Commit ==="
+    
+    if [ -z "$MESSAGE" ]; then
+        echo "Error: No commit message specified (-m)"
+        exit 1
+    fi
+    
+    echo ""
+    echo "Staged changes:"
+    git diff --cached --stat 2>/dev/null
+    
+    echo ""
+    git commit -m "$MESSAGE" 2>&1
+}
+
+cmd_push() {
+    echo "=== Push ==="
+    echo ""
+    
+    BRANCH=$(git branch --show-current)
+    echo "Pushing $BRANCH..."
+    git push 2>&1 || git push -u origin "$BRANCH" 2>&1
+}
+
+cmd_stash() {
+    echo "=== Stash ==="
+    echo ""
+    
+    echo "--- Stash List ---"
+    git stash list 2>/dev/null | head -10
+    
+    echo ""
+    echo "--- Current Changes ---"
+    git status -s 2>/dev/null | head -10
+}
+
+cmd_blame() {
+    if [ -z "$FILE" ]; then
+        echo "Error: No file specified (-f)"
+        exit 1
+    fi
+    
+    echo "=== Blame: $FILE ==="
+    echo ""
+    git blame "$FILE" 2>/dev/null | head -50
+}
+
+cmd_history() {
+    if [ -z "$FILE" ]; then
+        echo "Error: No file specified (-f)"
+        exit 1
+    fi
+    
+    echo "=== History: $FILE ==="
+    echo ""
+    git log --follow --oneline -n "$NUM" -- "$FILE" 2>/dev/null
+    
+    echo ""
+    echo "--- Changes per commit ---"
+    git log --follow --oneline --stat -n 5 -- "$FILE" 2>/dev/null
+}
+
+case "$COMMAND" in
+    status) cmd_status ;;
+    diff) cmd_diff ;;
+    log) cmd_log ;;
+    branch) cmd_branch ;;
+    commit) cmd_commit ;;
+    push) cmd_push ;;
+    stash) cmd_stash ;;
+    blame) cmd_blame ;;
+    history) cmd_history ;;
+    *)
+        echo "Unknown command: $COMMAND"
+        usage
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

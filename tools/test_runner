@@ -1,0 +1,205 @@
+#!/bin/bash
+# Test Runner - Execute tests for various languages
+# SPAI Dev Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Test Runner - Execute tests
+
+Usage: test_runner [OPTIONS] [PATTERN]
+
+OPTIONS:
+    -l, --lang LANG     Force language (rust, python, js, go)
+    -v, --verbose       Verbose output
+    -c, --coverage      Run with coverage
+    -w, --watch         Watch mode (re-run on changes)
+    --json              JSON output
+    -h, --help          Show this help
+
+EXAMPLES:
+    test_runner
+    test_runner -l python tests/
+    test_runner -c --verbose
+    test_runner test_auth
+EOF
+}
+
+LANG=""
+VERBOSE=""
+COVERAGE=0
+WATCH=0
+JSON_OUT=0
+PATTERN=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -l|--lang) LANG="$2"; shift 2 ;;
+        -v|--verbose) VERBOSE="verbose"; shift ;;
+        -c|--coverage) COVERAGE=1; shift ;;
+        -w|--watch) WATCH=1; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) PATTERN="$1"; shift ;;
+    esac
+done
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Test Runner"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Auto-detect language
+detect_lang() {
+    if [ -f "Cargo.toml" ]; then
+        echo "rust"
+    elif [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "pytest.ini" ]; then
+        echo "python"
+    elif [ -f "package.json" ]; then
+        echo "javascript"
+    elif [ -f "go.mod" ]; then
+        echo "go"
+    else
+        echo "unknown"
+    fi
+}
+
+if [ -z "$LANG" ]; then
+    LANG=$(detect_lang)
+fi
+
+echo "Language: $LANG"
+echo ""
+
+run_rust_tests() {
+    echo "=== Rust Tests ==="
+    
+    CMD="cargo test"
+    
+    if [ -n "$PATTERN" ]; then
+        CMD="$CMD $PATTERN"
+    fi
+    
+    if [ -n "$VERBOSE" ]; then
+        CMD="$CMD -- --nocapture"
+    fi
+    
+    if [ $WATCH -eq 1 ] && command -v cargo-watch &>/dev/null; then
+        cargo watch -x "test $PATTERN"
+    else
+        eval "$CMD" 2>&1 || true
+    fi
+    
+    if [ $COVERAGE -eq 1 ]; then
+        echo ""
+        echo "--- Coverage ---"
+        if command -v cargo-tarpaulin &>/dev/null; then
+            cargo tarpaulin --out Stdout 2>&1 | tail -30 || true
+        else
+            echo "Install cargo-tarpaulin for coverage"
+        fi
+    fi
+}
+
+run_python_tests() {
+    echo "=== Python Tests ==="
+    
+    if command -v pytest &>/dev/null; then
+        CMD="pytest"
+        
+        if [ -n "$PATTERN" ]; then
+            CMD="$CMD $PATTERN"
+        fi
+        
+        if [ -n "$VERBOSE" ]; then
+            CMD="$CMD -v"
+        fi
+        
+        if [ $COVERAGE -eq 1 ]; then
+            CMD="$CMD --cov --cov-report=term-missing"
+        fi
+        
+        if [ $WATCH -eq 1 ] && command -v pytest-watch &>/dev/null; then
+            ptw -- $PATTERN
+        else
+            eval "$CMD" 2>&1 || true
+        fi
+    elif command -v python &>/dev/null; then
+        echo "Using unittest..."
+        python -m unittest discover 2>&1 || true
+    else
+        echo "pytest not found"
+    fi
+}
+
+run_js_tests() {
+    echo "=== JavaScript/TypeScript Tests ==="
+    
+    if [ -f "package.json" ]; then
+        # Check for test script
+        if grep -q '"test"' package.json; then
+            CMD="npm test"
+            
+            if [ -n "$PATTERN" ]; then
+                CMD="$CMD -- $PATTERN"
+            fi
+            
+            if [ $COVERAGE -eq 1 ]; then
+                CMD="$CMD -- --coverage"
+            fi
+            
+            if [ $WATCH -eq 1 ]; then
+                CMD="$CMD -- --watch"
+            fi
+            
+            eval "$CMD" 2>&1 || true
+        elif command -v npx &>/dev/null; then
+            # Try jest directly
+            CMD="npx jest"
+            [ -n "$PATTERN" ] && CMD="$CMD $PATTERN"
+            [ $COVERAGE -eq 1 ] && CMD="$CMD --coverage"
+            [ $WATCH -eq 1 ] && CMD="$CMD --watch"
+            
+            eval "$CMD" 2>&1 || true
+        fi
+    else
+        echo "No package.json found"
+    fi
+}
+
+run_go_tests() {
+    echo "=== Go Tests ==="
+    
+    CMD="go test"
+    
+    if [ -n "$VERBOSE" ]; then
+        CMD="$CMD -v"
+    fi
+    
+    if [ $COVERAGE -eq 1 ]; then
+        CMD="$CMD -cover"
+    fi
+    
+    if [ -n "$PATTERN" ]; then
+        CMD="$CMD -run $PATTERN ./..."
+    else
+        CMD="$CMD ./..."
+    fi
+    
+    eval "$CMD" 2>&1 || true
+}
+
+case "$LANG" in
+    rust|rs) run_rust_tests ;;
+    python|py) run_python_tests ;;
+    javascript|js|typescript|ts) run_js_tests ;;
+    go) run_go_tests ;;
+    *)
+        echo "Unknown or unsupported language: $LANG"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

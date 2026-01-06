@@ -145,3 +145,11 @@ required-features = ["mcp-tools"]
 [[example]]
 name = "stateful_agent"
 path = "examples/stateful_agent.rs"
+
+[[example]]
+name = "concurrent_agent_tools"
+path = "examples/concurrent_agent_tools.rs"
+
+[[example]]
+name = "sequential_agent_dev"
+path = "examples/sequential_agent_dev.rs"

@@ -1,0 +1,37 @@
+{
+    "name": "Firewall Auditor",
+    "description": "Analyze firewall rules from iptables, nftables, and UFW. Checks default policies, rule counts, and identifies open ports not covered by rules.",
+    "category": "network",
+    "tags": [
+        "security_tools",
+        "network_tools"
+    ],
+    "requires_sudo": true,
+    "args": [
+        {
+            "name": "--iptables",
+            "description": "Analyze iptables rules",
+            "required": false
+        },
+        {
+            "name": "--nftables",
+            "description": "Analyze nftables rules",
+            "required": false
+        },
+        {
+            "name": "--ufw",
+            "description": "Analyze UFW status",
+            "required": false
+        },
+        {
+            "name": "--all",
+            "description": "Analyze all firewalls",
+            "required": false
+        },
+        {
+            "name": "--open-ports",
+            "description": "Show uncovered open ports",
+            "required": false
+        }
+    ]
+}

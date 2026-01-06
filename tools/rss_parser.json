@@ -1,0 +1,26 @@
+{
+    "name": "RSS Parser",
+    "description": "Parse RSS and Atom feeds to extract news items, titles, links, and publication dates.",
+    "category": "general",
+    "tags": [
+        "web_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-n",
+            "description": "Number of items to show",
+            "required": false
+        },
+        {
+            "name": "-f",
+            "description": "Include full content",
+            "required": false
+        },
+        {
+            "name": "-d",
+            "description": "Sort by date newest first",
+            "required": false
+        }
+    ]
+}

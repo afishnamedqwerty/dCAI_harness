@@ -1,0 +1,10 @@
+{
+    "name": "Memory Forensics",
+    "description": "Analyze /proc for suspicious activity including hidden processes, deleted binaries still running, LD_PRELOAD injection, and suspicious memory mappings.",
+    "category": "process",
+    "tags": [
+        "security_tools"
+    ],
+    "requires_sudo": true,
+    "args": []
+}

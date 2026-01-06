@@ -1,0 +1,32 @@
+{
+    "name": "PDF Extractor",
+    "description": "Extract text and tables from PDF files using pdftotext and tabula. Supports page ranges and markdown output.",
+    "category": "general",
+    "tags": [
+        "web_tools",
+        "filesystem_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-p",
+            "description": "Page range (e.g., 1-5)",
+            "required": false
+        },
+        {
+            "name": "-t",
+            "description": "Extract tables",
+            "required": false
+        },
+        {
+            "name": "-m",
+            "description": "Output as markdown",
+            "required": false
+        },
+        {
+            "name": "-o",
+            "description": "Save to file",
+            "required": false
+        }
+    ]
+}

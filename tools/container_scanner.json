@@ -1,0 +1,27 @@
+{
+    "name": "Container Scanner",
+    "description": "Scan Docker images and containers for vulnerabilities. Uses trivy, grype, or docker scan. Also checks container security settings like privileged mode.",
+    "category": "general",
+    "tags": [
+        "security_tools",
+        "dev_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "--all",
+            "description": "Scan all local images",
+            "required": false
+        },
+        {
+            "name": "--running",
+            "description": "Scan running containers",
+            "required": false
+        },
+        {
+            "name": "--list",
+            "description": "List available images",
+            "required": false
+        }
+    ]
+}

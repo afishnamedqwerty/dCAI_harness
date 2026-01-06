@@ -1,0 +1,170 @@
+#!/bin/bash
+# Sandbox Executor - Run untrusted code in isolated environment
+# SPAI Security Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Sandbox Executor - Run code in isolated container
+
+Usage: sandbox_exec [OPTIONS] <command>
+
+OPTIONS:
+    -l, --lang LANG   Language runtime (python, node, bash, ruby)
+    -f, --file FILE   Execute file instead of command
+    -t, --timeout SEC Execution timeout [default: 30]
+    -m, --memory MB   Memory limit [default: 256]
+    -n, --no-network  Disable network access
+    --firejail        Use firejail (default if available)
+    --docker          Use docker
+    --bubblewrap      Use bubblewrap
+    -h, --help        Show this help
+
+EXAMPLES:
+    sandbox_exec -l python -f script.py
+    sandbox_exec -l bash "echo hello"
+    sandbox_exec --timeout 10 -l node "console.log('test')"
+EOF
+}
+
+TIMEOUT=30
+MEMORY=256
+NETWORK=1
+LANG="bash"
+FILE=""
+SANDBOX="auto"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -l|--lang) LANG="$2"; shift 2 ;;
+        -f|--file) FILE="$2"; shift 2 ;;
+        -t|--timeout) TIMEOUT="$2"; shift 2 ;;
+        -m|--memory) MEMORY="$2"; shift 2 ;;
+        -n|--no-network) NETWORK=0; shift ;;
+        --firejail) SANDBOX="firejail"; shift ;;
+        --docker) SANDBOX="docker"; shift ;;
+        --bubblewrap) SANDBOX="bubblewrap"; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) COMMAND="$*"; break ;;
+    esac
+done
+
+if [ -z "${COMMAND:-}" ] && [ -z "$FILE" ]; then
+    echo "Error: No command or file specified"
+    usage
+    exit 1
+fi
+
+# Detect available sandbox
+detect_sandbox() {
+    if [ "$SANDBOX" != "auto" ]; then
+        echo "$SANDBOX"
+        return
+    fi
+    
+    if command -v firejail &>/dev/null; then
+        echo "firejail"
+    elif command -v bwrap &>/dev/null; then
+        echo "bubblewrap"
+    elif command -v docker &>/dev/null; then
+        echo "docker"
+    else
+        echo "none"
+    fi
+}
+
+SANDBOX_TYPE=$(detect_sandbox)
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Sandbox Executor"
+echo "   Sandbox: $SANDBOX_TYPE | Language: $LANG | Timeout: ${TIMEOUT}s"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Get interpreter
+get_interpreter() {
+    case "$LANG" in
+        python|py) echo "python3" ;;
+        node|js) echo "node" ;;
+        ruby|rb) echo "ruby" ;;
+        bash|sh) echo "bash" ;;
+        *) echo "$LANG" ;;
+    esac
+}
+
+INTERPRETER=$(get_interpreter)
+
+run_firejail() {
+    local NET_OPT=""
+    [ "$NETWORK" -eq 0 ] && NET_OPT="--net=none"
+    
+    if [ -n "$FILE" ]; then
+        timeout "$TIMEOUT" firejail --quiet --private --noroot $NET_OPT \
+            "$INTERPRETER" "$FILE"
+    else
+        timeout "$TIMEOUT" firejail --quiet --private --noroot $NET_OPT \
+            "$INTERPRETER" -c "$COMMAND"
+    fi
+}
+
+run_bubblewrap() {
+    local NET_OPT=""
+    [ "$NETWORK" -eq 0 ] && NET_OPT="--unshare-net"
+    
+    if [ -n "$FILE" ]; then
+        timeout "$TIMEOUT" bwrap --ro-bind /usr /usr --ro-bind /lib /lib \
+            --ro-bind /lib64 /lib64 --proc /proc --dev /dev \
+            --tmpfs /tmp --unshare-all $NET_OPT \
+            "$INTERPRETER" "$FILE"
+    else
+        timeout "$TIMEOUT" bwrap --ro-bind /usr /usr --ro-bind /lib /lib \
+            --ro-bind /lib64 /lib64 --proc /proc --dev /dev \
+            --tmpfs /tmp --unshare-all $NET_OPT \
+            "$INTERPRETER" -c "$COMMAND"
+    fi
+}
+
+run_docker() {
+    local NET_OPT="--network=bridge"
+    [ "$NETWORK" -eq 0 ] && NET_OPT="--network=none"
+    
+    local IMAGE="python:3-slim"
+    case "$LANG" in
+        node|js) IMAGE="node:slim" ;;
+        ruby|rb) IMAGE="ruby:slim" ;;
+        bash|sh) IMAGE="bash:latest" ;;
+    esac
+    
+    if [ -n "$FILE" ]; then
+        docker run --rm $NET_OPT --memory="${MEMORY}m" \
+            -v "$(realpath "$FILE"):/sandbox/script:ro" \
+            "$IMAGE" timeout "$TIMEOUT" "$INTERPRETER" /sandbox/script
+    else
+        docker run --rm $NET_OPT --memory="${MEMORY}m" \
+            "$IMAGE" timeout "$TIMEOUT" "$INTERPRETER" -c "$COMMAND"
+    fi
+}
+
+run_unsafe() {
+    echo "⚠️  WARNING: No sandbox available, running in restricted mode"
+    if [ -n "$FILE" ]; then
+        timeout "$TIMEOUT" "$INTERPRETER" "$FILE"
+    else
+        timeout "$TIMEOUT" "$INTERPRETER" -c "$COMMAND"
+    fi
+}
+
+case "$SANDBOX_TYPE" in
+    firejail) run_firejail ;;
+    bubblewrap) run_bubblewrap ;;
+    docker) run_docker ;;
+    *) run_unsafe ;;
+esac
+
+EXIT_CODE=$?
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "   Exit code: $EXIT_CODE"
+echo "═══════════════════════════════════════════════════════════════"
+exit $EXIT_CODE

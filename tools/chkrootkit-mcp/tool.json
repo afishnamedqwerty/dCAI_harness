@@ -2,6 +2,10 @@
     "name": "chkrootkit",
     "description": "Rootkit detection scanner. Checks the system for signs of rootkits by examining binaries, network interfaces, and other system components for modifications.",
     "category": "rootkit",
+    "tags": [
+        "security_tools",
+        "rootkit_tools"
+    ],
     "requires_sudo": true,
     "timeout_secs": 120,
     "args": [

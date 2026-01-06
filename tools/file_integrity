@@ -1,0 +1,113 @@
+#!/bin/bash
+# File Integrity Monitor - Hash-based file change detection
+# SPAI Security Tool
+
+set -euo pipefail
+
+HASH_DB="${HOME}/.spai/file_integrity.db"
+HASH_ALGO="sha256"
+
+usage() {
+    cat <<EOF
+File Integrity Monitor - Detect file modifications
+
+Usage: file_integrity [COMMAND] [OPTIONS]
+
+COMMANDS:
+    init <path>       Initialize baseline for directory
+    check <path>      Check files against baseline
+    update <path>     Update baseline with current state
+    list              List monitored paths
+
+OPTIONS:
+    -a, --algo        Hash algorithm (md5, sha1, sha256) [default: sha256]
+    -v, --verbose     Verbose output
+    -j, --json        JSON output
+    -h, --help        Show this help
+
+EXAMPLES:
+    file_integrity init /etc
+    file_integrity check /etc
+    file_integrity check /usr/bin --json
+EOF
+}
+
+mkdir -p "$(dirname "$HASH_DB")"
+
+COMMAND="${1:-help}"
+shift || true
+
+case "$COMMAND" in
+    init)
+        TARGET="${1:-.}"
+        echo "Initializing baseline for: $TARGET"
+        find "$TARGET" -type f 2>/dev/null | while read -r file; do
+            hash=$(${HASH_ALGO}sum "$file" 2>/dev/null | awk '{print $1}')
+            if [ -n "$hash" ]; then
+                echo "$file|$hash|$(stat -c %Y "$file" 2>/dev/null || echo 0)"
+            fi
+        done > "${HASH_DB}.$(echo "$TARGET" | tr '/' '_')"
+        echo "✓ Baseline created with $(wc -l < "${HASH_DB}.$(echo "$TARGET" | tr '/' '_')") files"
+        ;;
+    
+    check)
+        TARGET="${1:-.}"
+        DB_FILE="${HASH_DB}.$(echo "$TARGET" | tr '/' '_')"
+        
+        if [ ! -f "$DB_FILE" ]; then
+            echo "❌ No baseline found. Run 'file_integrity init $TARGET' first."
+            exit 1
+        fi
+        
+        echo "Checking integrity for: $TARGET"
+        MODIFIED=0
+        ADDED=0
+        DELETED=0
+        
+        # Check existing files
+        while IFS='|' read -r file old_hash old_mtime; do
+            if [ ! -f "$file" ]; then
+                echo "🔴 DELETED: $file"
+                ((DELETED++)) || true
+            else
+                new_hash=$(${HASH_ALGO}sum "$file" 2>/dev/null | awk '{print $1}')
+                if [ "$new_hash" != "$old_hash" ]; then
+                    echo "🟡 MODIFIED: $file"
+                    ((MODIFIED++)) || true
+                fi
+            fi
+        done < "$DB_FILE"
+        
+        # Check for new files
+        find "$TARGET" -type f 2>/dev/null | while read -r file; do
+            if ! grep -q "^$file|" "$DB_FILE" 2>/dev/null; then
+                echo "🟢 ADDED: $file"
+                ((ADDED++)) || true
+            fi
+        done
+        
+        echo ""
+        echo "Summary: Modified=$MODIFIED, Added=$ADDED, Deleted=$DELETED"
+        ;;
+    
+    update)
+        TARGET="${1:-.}"
+        echo "Updating baseline for: $TARGET"
+        $0 init "$TARGET"
+        ;;
+    
+    list)
+        echo "Monitored paths:"
+        ls -1 "${HASH_DB}."* 2>/dev/null | sed 's/.*\./  /' | tr '_' '/' || echo "  (none)"
+        ;;
+    
+    help|--help|-h)
+        usage
+        ;;
+    
+    *)
+        echo "Unknown command: $COMMAND"
+        usage
+        exit 1
+        ;;
+esac

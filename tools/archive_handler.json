@@ -1,0 +1,31 @@
+{
+    "name": "Archive Handler",
+    "description": "Create and extract archives in tar, zip, and 7z formats. Supports compression and integrity testing.",
+    "category": "filesystem",
+    "tags": [
+        "filesystem_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "create",
+            "description": "Create archive",
+            "required": false
+        },
+        {
+            "name": "extract",
+            "description": "Extract archive",
+            "required": false
+        },
+        {
+            "name": "list",
+            "description": "List archive contents",
+            "required": false
+        },
+        {
+            "name": "-f",
+            "description": "Archive file",
+            "required": true
+        }
+    ]
+}

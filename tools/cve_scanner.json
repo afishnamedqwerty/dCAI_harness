@@ -1,0 +1,26 @@
+{
+    "name": "CVE Scanner",
+    "description": "Check installed packages against CVE vulnerability databases. Uses grype, trivy, or package manager security tools to identify vulnerable packages.",
+    "category": "general",
+    "tags": [
+        "security_tools"
+    ],
+    "requires_sudo": true,
+    "args": [
+        {
+            "name": "--all",
+            "description": "Scan all installed packages",
+            "required": false
+        },
+        {
+            "name": "--system",
+            "description": "Detect package manager and scan",
+            "required": false
+        },
+        {
+            "name": "--update",
+            "description": "Update CVE database first",
+            "required": false
+        }
+    ]
+}

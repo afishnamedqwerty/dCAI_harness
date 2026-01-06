@@ -1,0 +1,261 @@
+#!/bin/bash
+# Archive Handler - Create and extract archives
+# SPAI Filesystem Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Archive Handler - Create and extract archives
+
+Usage: archive_handler [COMMAND] [OPTIONS]
+
+COMMANDS:
+    create              Create archive
+    extract             Extract archive
+    list                List archive contents
+    test                Test archive integrity
+
+OPTIONS:
+    -f, --file FILE     Archive file
+    -t, --type TYPE     Archive type (tar, tgz, zip, 7z) [auto-detect]
+    -o, --output DIR    Output directory for extraction
+    -v, --verbose       Verbose output
+    -h, --help          Show this help
+
+EXAMPLES:
+    archive_handler create -f backup.tar.gz src/
+    archive_handler extract -f archive.zip -o output/
+    archive_handler list -f package.tar.gz
+EOF
+}
+
+COMMAND=""
+ARCHIVE=""
+TYPE=""
+OUTPUT="."
+VERBOSE=""
+FILES=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        create|extract|list|test) COMMAND="$1"; shift ;;
+        -f|--file) ARCHIVE="$2"; shift 2 ;;
+        -t|--type) TYPE="$2"; shift 2 ;;
+        -o|--output) OUTPUT="$2"; shift 2 ;;
+        -v|--verbose) VERBOSE="-v"; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) FILES+=("$1"); shift ;;
+    esac
+done
+
+if [ -z "$COMMAND" ]; then
+    echo "Error: No command specified"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Archive Handler"
+echo "   Command: $COMMAND"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Auto-detect type from extension
+detect_type() {
+    local file="$1"
+    case "$file" in
+        *.tar.gz|*.tgz) echo "tgz" ;;
+        *.tar.bz2|*.tbz2) echo "tbz2" ;;
+        *.tar.xz|*.txz) echo "txz" ;;
+        *.tar) echo "tar" ;;
+        *.zip) echo "zip" ;;
+        *.7z) echo "7z" ;;
+        *.rar) echo "rar" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+if [ -n "$ARCHIVE" ] && [ -z "$TYPE" ]; then
+    TYPE=$(detect_type "$ARCHIVE")
+fi
+
+create_archive() {
+    if [ -z "$ARCHIVE" ]; then
+        echo "Error: No archive file specified (-f)"
+        exit 1
+    fi
+    
+    if [ ${#FILES[@]} -eq 0 ]; then
+        echo "Error: No files specified to archive"
+        exit 1
+    fi
+    
+    echo "Creating: $ARCHIVE"
+    echo "Files: ${FILES[*]}"
+    echo ""
+    
+    case "$TYPE" in
+        tar)
+            tar cf $VERBOSE "$ARCHIVE" "${FILES[@]}"
+            ;;
+        tgz)
+            tar czf $VERBOSE "$ARCHIVE" "${FILES[@]}"
+            ;;
+        tbz2)
+            tar cjf $VERBOSE "$ARCHIVE" "${FILES[@]}"
+            ;;
+        txz)
+            tar cJf $VERBOSE "$ARCHIVE" "${FILES[@]}"
+            ;;
+        zip)
+            zip -r $VERBOSE "$ARCHIVE" "${FILES[@]}"
+            ;;
+        7z)
+            if command -v 7z &>/dev/null; then
+                7z a "$ARCHIVE" "${FILES[@]}"
+            else
+                echo "Error: 7z not installed"
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Error: Unknown archive type. Specify with -t"
+            exit 1
+            ;;
+    esac
+    
+    echo ""
+    echo "✓ Created: $ARCHIVE ($(ls -lh "$ARCHIVE" | awk '{print $5}'))"
+}
+
+extract_archive() {
+    if [ -z "$ARCHIVE" ]; then
+        echo "Error: No archive file specified (-f)"
+        exit 1
+    fi
+    
+    if [ ! -f "$ARCHIVE" ]; then
+        echo "Error: Archive not found: $ARCHIVE"
+        exit 1
+    fi
+    
+    mkdir -p "$OUTPUT"
+    echo "Extracting: $ARCHIVE"
+    echo "Output: $OUTPUT"
+    echo ""
+    
+    case "$TYPE" in
+        tar|tgz|tbz2|txz)
+            tar xf $VERBOSE "$ARCHIVE" -C "$OUTPUT"
+            ;;
+        zip)
+            unzip $VERBOSE "$ARCHIVE" -d "$OUTPUT"
+            ;;
+        7z)
+            if command -v 7z &>/dev/null; then
+                7z x "$ARCHIVE" -o"$OUTPUT"
+            else
+                echo "Error: 7z not installed"
+                exit 1
+            fi
+            ;;
+        rar)
+            if command -v unrar &>/dev/null; then
+                unrar x "$ARCHIVE" "$OUTPUT"
+            else
+                echo "Error: unrar not installed"
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Error: Unknown archive type"
+            exit 1
+            ;;
+    esac
+    
+    echo ""
+    echo "✓ Extracted to: $OUTPUT"
+}
+
+list_archive() {
+    if [ -z "$ARCHIVE" ]; then
+        echo "Error: No archive file specified (-f)"
+        exit 1
+    fi
+    
+    echo "Contents of: $ARCHIVE"
+    echo ""
+    
+    case "$TYPE" in
+        tar|tgz|tbz2|txz)
+            tar tf "$ARCHIVE" | head -100
+            ;;
+        zip)
+            unzip -l "$ARCHIVE" | head -100
+            ;;
+        7z)
+            7z l "$ARCHIVE" | head -100
+            ;;
+        *)
+            echo "Error: Unknown archive type"
+            exit 1
+            ;;
+    esac
+}
+
+test_archive() {
+    if [ -z "$ARCHIVE" ]; then
+        echo "Error: No archive file specified (-f)"
+        exit 1
+    fi
+    
+    echo "Testing: $ARCHIVE"
+    echo ""
+    
+    case "$TYPE" in
+        tar|tgz|tbz2|txz)
+            if tar tf "$ARCHIVE" &>/dev/null; then
+                echo "✓ Archive is valid"
+            else
+                echo "✗ Archive is corrupt"
+                exit 1
+            fi
+            ;;
+        zip)
+            if unzip -t "$ARCHIVE"; then
+                echo "✓ Archive is valid"
+            else
+                echo "✗ Archive is corrupt"
+                exit 1
+            fi
+            ;;
+        7z)
+            if 7z t "$ARCHIVE"; then
+                echo "✓ Archive is valid"
+            else
+                echo "✗ Archive is corrupt"
+                exit 1
+            fi
+            ;;
+        *)
+            echo "Error: Unknown archive type"
+            exit 1
+            ;;
+    esac
+}
+
+case "$COMMAND" in
+    create) create_archive ;;
+    extract) extract_archive ;;
+    list) list_archive ;;
+    test) test_archive ;;
+    *)
+        echo "Unknown command: $COMMAND"
+        usage
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

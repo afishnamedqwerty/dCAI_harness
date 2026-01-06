@@ -110,7 +110,6 @@ Production-grade perpetual agent capabilities:
 
 - Rust 1.70 or later
 - OpenRouter API key (get one at [openrouter.ai](https://openrouter.ai))
-- For security agent: chkrootkit, rkhunter, lynis (automated install available)
 
 ### Installation
 
@@ -161,42 +160,93 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-## Examples
+## Tagged Tool System
 
-### Comprehensive Security Agent (Featured)
+SPAI provides a modular tool discovery system with tag-based filtering. Tools are organized in the `tools/` directory with corresponding `.json` metadata files that define their tags.
 
-The flagship example demonstrating all framework capabilities with three integrated security tools:
+### Available Tag Categories
 
-```bash
-# One-time setup (2-3 minutes)
-sudo bash tools/setup_all_security_tools.sh
-./tools/build_all_mcp.sh
-export OPENROUTER_API_KEY=your-key
+| Tag | Description | Example Tools |
+|-----|-------------|---------------|
+| `security_tools` | Security auditing and vulnerability scanning | `file_integrity`, `cve_scanner`, `ssh_auditor`, `firewall_auditor` |
+| `web_tools` | Web scraping and API interaction | `exa_search`, `url_fetcher`, `api_client`, `rss_parser` |
+| `filesystem_tools` | File operations and search | `semantic_search`, `file_metadata`, `diff_tool`, `archive_handler` |
+| `dev_tools` | Development workflow tools | `code_linter`, `test_runner`, `git_ops`, `sandbox_exec` |
+| `all` | Special tag - returns all tools | * |
 
-# Run comprehensive security scan
-cargo run --example basic_agent_chkrootkit --features mcp-tools
+### Agent Instantiation with Tagged Tools
+
+```rust
+use spai::prelude::*;
+use spai::security_tools::{SecurityToolRegistry, TaggedSecurityTools};
+use std::sync::Arc;
+use std::path::PathBuf;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Discover all tools from the tools directory
+    let tools_dir = PathBuf::from("tools");
+    let registry = Arc::new(SecurityToolRegistry::discover(&tools_dir));
+    
+    println!("Discovered {} tools", registry.len());
+    println!("Available tags: {:?}", registry.all_tags());
+    
+    // Load only dev_tools for this agent
+    let dev_helper = TaggedSecurityTools::new(registry.clone(), &["dev_tools"]);
+    let dev_tools = dev_helper.create_tools();
+    
+    // Create LLM client
+    let client: Arc<dyn LlmClient> = Arc::new(OpenRouterClient::from_env()?);
+    
+    // Build agent with tagged tools
+    let agent = Agent::builder()
+        .name("Dev Assistant")
+        .model("anthropic/claude-sonnet-4")
+        .system_prompt("You are a development assistant with access to dev tools.")
+        .tools(dev_tools)
+        .max_loops(5)
+        .client(client)
+        .build()?;
+    
+    // Run agent
+    let output = agent.react_loop("Run the code linter on src/").await?;
+    println!("{}", output.content);
+    
+    Ok(())
+}
 ```
-**What it does:**
-- Runs chkrootkit, rkhunter, portlist, tshark (60s default capture) and lynis security scans
-- Uses designated OpenRouter model (or local vllm hosted with --local where a model can be hosted in your org's private net connected to SPAI harness on each device for routine heartbeat reporting of system configs, IAM/RBAC and firewall rules, and general security assessments at scale)
-- Provides comprehensive security assessment with prioritized recommendations
-- Demonstrates: MCP tools, multi-tool coordination, ReAct loop, detailed tracing
 
-### Basic Agent
+### Loading Multiple Tag Categories
 
-See [examples/basic_agent.rs](examples/basic_agent.rs) for a simple calculator agent demonstration.
+```rust
+// Load security and web tools together
+let helper = TaggedSecurityTools::new(registry.clone(), &["security_tools", "web_tools"]);
 
-```bash
-OPENROUTER_API_KEY=your-key cargo run --example basic_agent
+// Load all available tools
+let all_helper = TaggedSecurityTools::new(registry.clone(), &["all"]);
 ```
 
-### OpenRouter Client
+### Tool Metadata Format
 
-See [examples/openrouter_client.rs](examples/openrouter_client.rs) for direct API integration.
+Each tool has a corresponding `.json` file (e.g., `tools/sandbox_exec.json`):
 
-```bash
-OPENROUTER_API_KEY=your-key cargo run --example openrouter_client
+```json
+{
+    "name": "Sandbox Executor",
+    "description": "Run untrusted code in isolated environment",
+    "category": "security",
+    "tags": ["dev_tools", "security_tools"],
+    "requires_sudo": false,
+    "args": [
+        {"name": "-l", "description": "Language runtime", "required": false},
+        {"name": "-t", "description": "Timeout in seconds", "required": false}
+    ]
+}
 ```
+
+### Tag Reference File
+
+See `tools/tags.json` for a complete reference of all available tags and their associated tools.
 
 ## Guardrails
 

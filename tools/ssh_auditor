@@ -1,0 +1,171 @@
+#!/bin/bash
+# SSH Auditor - Check SSH keys and configuration for anomalies
+# SPAI Security Tool
+
+set -euo pipefail
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI SSH Auditor"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Check SSH daemon configuration
+check_sshd_config() {
+    echo "=== SSH Daemon Configuration ==="
+    local CONFIG="/etc/ssh/sshd_config"
+    
+    if [ ! -r "$CONFIG" ]; then
+        echo "Cannot read $CONFIG"
+        return
+    fi
+    
+    echo ""
+    echo "--- Security Settings ---"
+    
+    # Check critical settings
+    check_setting() {
+        local setting="$1"
+        local recommended="$2"
+        local value=$(grep -i "^$setting" "$CONFIG" 2>/dev/null | awk '{print $2}' | head -1)
+        
+        if [ -z "$value" ]; then
+            echo "  $setting: (default) - consider setting explicitly"
+        elif [ "$value" = "$recommended" ]; then
+            echo "  ✓ $setting: $value"
+        else
+            echo "  ⚠️  $setting: $value (recommended: $recommended)"
+        fi
+    }
+    
+    check_setting "PermitRootLogin" "no"
+    check_setting "PasswordAuthentication" "no"
+    check_setting "PubkeyAuthentication" "yes"
+    check_setting "PermitEmptyPasswords" "no"
+    check_setting "X11Forwarding" "no"
+    check_setting "MaxAuthTries" "3"
+    check_setting "Protocol" "2"
+    
+    echo ""
+    echo "--- Allowed Users/Groups ---"
+    grep -i "^AllowUsers\|^AllowGroups\|^DenyUsers\|^DenyGroups" "$CONFIG" 2>/dev/null || echo "  No explicit allow/deny rules"
+}
+
+# Check authorized_keys files
+check_authorized_keys() {
+    echo ""
+    echo "=== Authorized Keys Analysis ==="
+    
+    for home in /home/* /root; do
+        local auth_file="$home/.ssh/authorized_keys"
+        
+        if [ -f "$auth_file" ]; then
+            local user=$(basename "$home")
+            local key_count=$(wc -l < "$auth_file" 2>/dev/null || echo 0)
+            local perms=$(stat -c %a "$auth_file" 2>/dev/null || echo "???")
+            
+            echo ""
+            echo "--- $user ($auth_file) ---"
+            echo "  Keys: $key_count"
+            echo "  Permissions: $perms"
+            
+            if [ "$perms" != "600" ] && [ "$perms" != "400" ]; then
+                echo "  ⚠️  WARNING: Permissions should be 600 or 400"
+            fi
+            
+            # Show key types and comments
+            if [ -r "$auth_file" ]; then
+                echo "  Key details:"
+                while read -r line; do
+                    if [ -n "$line" ] && [[ ! "$line" =~ ^# ]]; then
+                        key_type=$(echo "$line" | awk '{print $1}')
+                        key_comment=$(echo "$line" | awk '{print $NF}')
+                        echo "    - $key_type ... $key_comment"
+                    fi
+                done < "$auth_file"
+            fi
+        fi
+    done
+}
+
+# Check known_hosts
+check_known_hosts() {
+    echo ""
+    echo "=== Known Hosts Analysis ==="
+    
+    for home in /home/* /root; do
+        local known_file="$home/.ssh/known_hosts"
+        
+        if [ -f "$known_file" ]; then
+            local user=$(basename "$home")
+            local host_count=$(wc -l < "$known_file" 2>/dev/null || echo 0)
+            
+            echo ""
+            echo "--- $user ---"
+            echo "  Known hosts: $host_count"
+            
+            # Check for suspicious entries
+            if [ -r "$known_file" ]; then
+                # Look for non-standard ports
+                if grep -q ":[0-9]" "$known_file" 2>/dev/null; then
+                    echo "  ⚠️  Contains non-standard port entries"
+                fi
+            fi
+        fi
+    done
+}
+
+# Check for SSH keys without passphrases (heuristic)
+check_key_security() {
+    echo ""
+    echo "=== SSH Private Key Analysis ==="
+    
+    for home in /home/* /root; do
+        for key in "$home"/.ssh/id_* ; do
+            if [ -f "$key" ] && [[ ! "$key" =~ \.pub$ ]]; then
+                local user=$(basename "$home")
+                local perms=$(stat -c %a "$key" 2>/dev/null || echo "???")
+                
+                echo ""
+                echo "--- $user: $(basename "$key") ---"
+                echo "  Permissions: $perms"
+                
+                if [ "$perms" != "600" ] && [ "$perms" != "400" ]; then
+                    echo "  ⚠️  WARNING: Permissions should be 600 or 400"
+                fi
+                
+                # Check if key is encrypted
+                if [ -r "$key" ] && grep -q "ENCRYPTED" "$key" 2>/dev/null; then
+                    echo "  ✓ Key is encrypted (passphrase protected)"
+                elif [ -r "$key" ]; then
+                    echo "  ⚠️  Key may not be passphrase protected"
+                fi
+            fi
+        done
+    done
+}
+
+# Recent SSH activity
+check_ssh_activity() {
+    echo ""
+    echo "=== Recent SSH Activity ==="
+    
+    echo ""
+    echo "--- Last 10 SSH Logins ---"
+    last -a 2>/dev/null | grep -i ssh | head -10 || echo "  No SSH logins found"
+    
+    echo ""
+    echo "--- Failed SSH Attempts (last 20) ---"
+    grep -i "sshd.*Failed" /var/log/auth.log 2>/dev/null | tail -20 || \
+        journalctl -u sshd --since="24 hours ago" 2>/dev/null | grep -i "failed" | tail -20 || \
+        echo "  Cannot read auth logs"
+}
+
+# Run all checks
+check_sshd_config
+check_authorized_keys
+check_known_hosts
+check_key_security
+check_ssh_activity
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"

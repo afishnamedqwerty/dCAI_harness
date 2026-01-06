@@ -1,0 +1,141 @@
+#!/bin/bash
+# Diff Tool - Compare files and directories
+# SPAI Filesystem Tool
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+Diff Tool - Compare files and directories
+
+Usage: diff_tool [OPTIONS] <path1> <path2>
+
+OPTIONS:
+    -s, --side-by-side  Side-by-side output
+    -u, --unified       Unified diff format (default)
+    -c, --context       Context diff format
+    -r, --recursive     Recursive directory comparison
+    -q, --brief         Brief output (only whether files differ)
+    -i, --ignore-case   Ignore case differences
+    --color             Colored output
+    --json              JSON output
+    -h, --help          Show this help
+
+EXAMPLES:
+    diff_tool file1.txt file2.txt
+    diff_tool -r dir1/ dir2/
+    diff_tool -s --color old.py new.py
+EOF
+}
+
+FORMAT="unified"
+RECURSIVE=""
+BRIEF=""
+IGNORE_CASE=""
+COLOR=""
+JSON_OUT=0
+PATH1=""
+PATH2=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -s|--side-by-side) FORMAT="side"; shift ;;
+        -u|--unified) FORMAT="unified"; shift ;;
+        -c|--context) FORMAT="context"; shift ;;
+        -r|--recursive) RECURSIVE="-r"; shift ;;
+        -q|--brief) BRIEF="-q"; shift ;;
+        -i|--ignore-case) IGNORE_CASE="-i"; shift ;;
+        --color) COLOR="--color=always"; shift ;;
+        --json) JSON_OUT=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *)
+            if [ -z "$PATH1" ]; then
+                PATH1="$1"
+            else
+                PATH2="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$PATH1" ] || [ -z "$PATH2" ]; then
+    echo "Error: Two paths required"
+    usage
+    exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "   SPAI Diff Tool"
+echo "   Comparing: $PATH1 <-> $PATH2"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
+# Build diff command
+DIFF_ARGS=($RECURSIVE $BRIEF $IGNORE_CASE)
+
+case "$FORMAT" in
+    side) DIFF_ARGS+=(-y --width=120) ;;
+    context) DIFF_ARGS+=(-c) ;;
+    unified) DIFF_ARGS+=(-u) ;;
+esac
+
+if [ -n "$COLOR" ] && command -v colordiff &>/dev/null; then
+    DIFF_CMD="colordiff"
+else
+    DIFF_CMD="diff"
+    [ -n "$COLOR" ] && DIFF_ARGS+=("$COLOR")
+fi
+
+# Run diff
+if [ $JSON_OUT -eq 1 ]; then
+    # JSON output
+    DIFF_OUTPUT=$($DIFF_CMD -u "$PATH1" "$PATH2" 2>&1 || true)
+    ADDED=$(echo "$DIFF_OUTPUT" | grep -c "^+" || echo 0)
+    REMOVED=$(echo "$DIFF_OUTPUT" | grep -c "^-" || echo 0)
+    
+    ESCAPED=$(echo "$DIFF_OUTPUT" | jq -Rs .)
+    
+    cat <<EOF
+{
+    "path1": "$PATH1",
+    "path2": "$PATH2",
+    "lines_added": $ADDED,
+    "lines_removed": $REMOVED,
+    "diff": $ESCAPED
+}
+EOF
+else
+    # Check if paths exist
+    if [ ! -e "$PATH1" ]; then
+        echo "Error: $PATH1 does not exist"
+        exit 1
+    fi
+    
+    if [ ! -e "$PATH2" ]; then
+        echo "Error: $PATH2 does not exist"
+        exit 1
+    fi
+    
+    # Run diff
+    $DIFF_CMD "${DIFF_ARGS[@]}" "$PATH1" "$PATH2" 2>&1 | head -500 || true
+    
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    
+    # Summary for files
+    if [ -f "$PATH1" ] && [ -f "$PATH2" ]; then
+        DIFF_LINES=$(diff "$PATH1" "$PATH2" 2>/dev/null | grep -c "^[<>]" || echo 0)
+        echo "Changes: $DIFF_LINES lines differ"
+    fi
+    
+    # Summary for directories
+    if [ -d "$PATH1" ] && [ -d "$PATH2" ]; then
+        ONLY1=$(diff -rq "$PATH1" "$PATH2" 2>/dev/null | grep -c "Only in $PATH1" || echo 0)
+        ONLY2=$(diff -rq "$PATH1" "$PATH2" 2>/dev/null | grep -c "Only in $PATH2" || echo 0)
+        DIFFER=$(diff -rq "$PATH1" "$PATH2" 2>/dev/null | grep -c " differ$" || echo 0)
+        echo "Only in $PATH1: $ONLY1 files"
+        echo "Only in $PATH2: $ONLY2 files"
+        echo "Files that differ: $DIFFER"
+    fi
+fi

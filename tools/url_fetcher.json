@@ -1,0 +1,31 @@
+{
+    "name": "URL Fetcher",
+    "description": "Fetch web pages and convert to markdown or plain text. Supports custom headers, user agents, and outputs JSON metadata.",
+    "category": "general",
+    "tags": [
+        "web_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-m",
+            "description": "Convert to markdown",
+            "required": false
+        },
+        {
+            "name": "-t",
+            "description": "Plain text only",
+            "required": false
+        },
+        {
+            "name": "-o",
+            "description": "Output file",
+            "required": false
+        },
+        {
+            "name": "-j",
+            "description": "JSON metadata output",
+            "required": false
+        }
+    ]
+}

@@ -1,0 +1,10 @@
+{
+    "name": "SSH Auditor",
+    "description": "Audit SSH configuration and keys for security issues. Checks sshd_config settings, authorized_keys permissions, key encryption status, and recent login attempts.",
+    "category": "general",
+    "tags": [
+        "security_tools"
+    ],
+    "requires_sudo": true,
+    "args": []
+}

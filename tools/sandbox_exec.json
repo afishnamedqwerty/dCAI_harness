@@ -1,0 +1,32 @@
+{
+    "name": "Sandbox Executor",
+    "description": "Run untrusted code in isolated environment using firejail, bubblewrap, or Docker. Supports Python, Node, Ruby, and Bash with configurable timeouts and memory limits.",
+    "category": "general",
+    "tags": [
+        "security_tools",
+        "dev_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-l",
+            "description": "Language runtime (python, node, bash, ruby)",
+            "required": false
+        },
+        {
+            "name": "-f",
+            "description": "Execute file instead of command",
+            "required": false
+        },
+        {
+            "name": "-t",
+            "description": "Execution timeout in seconds",
+            "required": false
+        },
+        {
+            "name": "-n",
+            "description": "Disable network access",
+            "required": false
+        }
+    ]
+}

@@ -1,0 +1,36 @@
+{
+    "name": "Git Ops",
+    "description": "Git operations helper for status, diff, log, branch management, commits, and file history.",
+    "category": "general",
+    "tags": [
+        "dev_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "status",
+            "description": "Show status summary",
+            "required": false
+        },
+        {
+            "name": "diff",
+            "description": "Show diff summary",
+            "required": false
+        },
+        {
+            "name": "log",
+            "description": "Show recent commits",
+            "required": false
+        },
+        {
+            "name": "commit",
+            "description": "Create commit",
+            "required": false
+        },
+        {
+            "name": "-m",
+            "description": "Commit message",
+            "required": false
+        }
+    ]
+}

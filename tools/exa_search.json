@@ -1,0 +1,31 @@
+{
+    "name": "Exa Search",
+    "description": "AI-powered semantic web search using Exa.ai API. Supports neural and keyword search modes, domain filtering, and content extraction.",
+    "category": "general",
+    "tags": [
+        "web_tools"
+    ],
+    "requires_sudo": false,
+    "args": [
+        {
+            "name": "-n",
+            "description": "Number of results",
+            "required": false
+        },
+        {
+            "name": "-t",
+            "description": "Search type: neural, keyword, auto",
+            "required": false
+        },
+        {
+            "name": "-d",
+            "description": "Limit to domain",
+            "required": false
+        },
+        {
+            "name": "-c",
+            "description": "Include page contents",
+            "required": false
+        }
+    ]
+}

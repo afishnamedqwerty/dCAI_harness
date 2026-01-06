@@ -1,0 +1,105 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "PRD Schema",
+    "description": "Product Requirements Document for long-running agent orchestration",
+    "type": "object",
+    "required": [
+        "projectName",
+        "features"
+    ],
+    "properties": {
+        "projectName": {
+            "type": "string",
+            "description": "Name of the project being built"
+        },
+        "description": {
+            "type": "string",
+            "description": "Brief description of the project"
+        },
+        "version": {
+            "type": "string",
+            "description": "Version of the PRD",
+            "default": "1.0.0"
+        },
+        "features": {
+            "type": "array",
+            "description": "List of features to implement",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "priority",
+                    "title",
+                    "description",
+                    "acceptanceCriteria",
+                    "passes"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Unique identifier for the feature (e.g., 'F001')",
+                        "pattern": "^[A-Z][0-9]{3}$"
+                    },
+                    "priority": {
+                        "type": "integer",
+                        "description": "Priority level (1 = highest)",
+                        "minimum": 1
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Short title of the feature"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed description of what the feature should do"
+                    },
+                    "acceptanceCriteria": {
+                        "type": "array",
+                        "description": "List of criteria that must be met for the feature to be considered complete",
+                        "items": {
+                            "type": "string"
+                        },
+                        "minItems": 1
+                    },
+                    "passes": {
+                        "type": "boolean",
+                        "description": "Whether the feature has been implemented and verified",
+                        "default": false
+                    },
+                    "testFiles": {
+                        "type": "array",
+                        "description": "List of test files that verify this feature",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "implementedFiles": {
+                        "type": "array",
+                        "description": "List of files modified to implement this feature",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Additional notes or context for the feature"
+                    }
+                }
+            }
+        },
+        "ciConfig": {
+            "type": "object",
+            "description": "Override auto-detected CI commands",
+            "properties": {
+                "testCommand": {
+                    "type": "string",
+                    "description": "Command to run tests"
+                },
+                "buildCommand": {
+                    "type": "string",
+                    "description": "Command to run build/typecheck"
+                }
+            }
+        }
+    }
+}
